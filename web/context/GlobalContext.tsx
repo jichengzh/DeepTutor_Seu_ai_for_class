@@ -252,6 +252,48 @@ export interface SidebarNavOrder {
   learnResearch: string[]; // Array of href paths for LEARN & RESEARCH group
 }
 
+// Project Creator Types
+interface ProjectState {
+  step: "config" | "task_generating" | "task_review" | "code_generating" | "complete";
+  theme: string;
+  selectedKb: string;
+  webSearchEnabled: boolean;
+  uploadedFile: File | null;
+  referenceStructure: Record<string, any> | null;
+  // Task generation
+  taskContent: string;
+  taskSections: Record<string, string>;
+  currentSection: string | null;
+  taskMdPath: string | null;
+  taskDocxPath: string | null;
+  // Code generation (Phase 3)
+  agentLogs: AgentLogEntry[];
+  generatedFiles: FileTreeNode[];
+  repoPath: string | null;
+  verifyPassed: boolean | null;
+  coverageMap: Record<string, string[]> | null;
+  // Common
+  sessionId: string | null;
+  logs: LogEntry[];
+  tokenStats: TokenStats;
+  error: string | null;
+}
+
+interface AgentLogEntry {
+  timestamp: string;
+  type: "tool_use" | "tool_result" | "message" | "error";
+  tool?: string;
+  path?: string;
+  content: string;
+}
+
+interface FileTreeNode {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  children?: FileTreeNode[];
+}
+
 interface GlobalContextType {
   // Solver
   solverState: SolverState;
@@ -320,6 +362,14 @@ interface GlobalContextType {
   setSidebarDescription: (description: string) => Promise<void>;
   sidebarNavOrder: SidebarNavOrder;
   setSidebarNavOrder: (order: SidebarNavOrder) => Promise<void>;
+
+  // Project Creator
+  projectState: ProjectState;
+  setProjectState: React.Dispatch<React.SetStateAction<ProjectState>>;
+  uploadReference: (file: File) => Promise<void>;
+  startTaskGeneration: () => void;
+  startCodeGeneration: () => void;
+  resetProject: () => void;
 
   // Persistence utilities
   clearAllPersistence: () => void;
@@ -441,6 +491,29 @@ const DEFAULT_CHAT_STATE: ChatState = {
   enableRag: false,
   enableWebSearch: false,
   currentStage: null,
+};
+
+const DEFAULT_PROJECT_STATE: ProjectState = {
+  step: "config",
+  theme: "",
+  selectedKb: "",
+  webSearchEnabled: false,
+  uploadedFile: null,
+  referenceStructure: null,
+  taskContent: "",
+  taskSections: {},
+  currentSection: null,
+  taskMdPath: null,
+  taskDocxPath: null,
+  agentLogs: [],
+  generatedFiles: [],
+  repoPath: null,
+  verifyPassed: null,
+  coverageMap: null,
+  sessionId: null,
+  logs: [],
+  tokenStats: { model: "Unknown", calls: 0, tokens: 0, input_tokens: 0, output_tokens: 0, cost: 0 },
+  error: null,
 };
 
 export function GlobalProvider({ children }: { children: React.ReactNode }) {
@@ -617,6 +690,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       "/ideagen",
       "/research",
       "/co_writer",
+      "/project",
     ],
   };
 
@@ -2109,6 +2183,245 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // --- Project Creator Logic ---
+  const [projectState, setProjectState] = useState<ProjectState>(DEFAULT_PROJECT_STATE);
+  const projectWs = useRef<WebSocket | null>(null);
+  // Use ref to always have the latest state in WebSocket callbacks (avoid closure issues)
+  const projectStateRef = useRef<ProjectState>(DEFAULT_PROJECT_STATE);
+  useEffect(() => {
+    projectStateRef.current = projectState;
+  }, [projectState]);
+
+  const uploadReference = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append("files", file);
+    const response = await fetch(
+      (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001") +
+        "/api/v1/project/upload-reference",
+      { method: "POST", body: formData },
+    );
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `Upload failed: ${response.status}`);
+    }
+    const data = await response.json();
+    setProjectState((prev) => ({
+      ...prev,
+      uploadedFile: file,
+      referenceStructure: data.structure,
+    }));
+  }, []);
+
+  const startTaskGeneration = useCallback(() => {
+    if (projectWs.current) projectWs.current.close();
+
+    setProjectState((prev) => ({
+      ...prev,
+      step: "task_generating",
+      taskContent: "",
+      taskSections: {},
+      currentSection: null,
+      error: null,
+      logs: [],
+    }));
+
+    const ws = new WebSocket(
+      (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001")
+        .replace(/^http:/, "ws:")
+        .replace(/^https:/, "wss:") + "/api/v1/project/generate-task",
+    );
+    projectWs.current = ws;
+
+    ws.onopen = () => {
+      const state = projectStateRef.current;
+      ws.send(
+        JSON.stringify({
+          theme: state.theme,
+          reference_structure: state.referenceStructure,
+          kb_name: state.selectedKb || null,
+          web_search: state.webSearchEnabled,
+          session_id: state.sessionId,
+        }),
+      );
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      switch (data.type) {
+        case "chunk":
+          setProjectState((prev) => ({
+            ...prev,
+            taskContent: prev.taskContent + data.content,
+          }));
+          break;
+        case "section":
+          setProjectState((prev) => ({
+            ...prev,
+            taskSections: { ...prev.taskSections, [data.section]: data.content },
+            currentSection: data.section,
+          }));
+          break;
+        case "status":
+        case "log":
+          setProjectState((prev) => ({
+            ...prev,
+            logs: [
+              ...prev.logs,
+              { type: data.type, content: data.content, timestamp: Date.now() },
+            ],
+          }));
+          break;
+        case "token_stats":
+          setProjectState((prev) => ({ ...prev, tokenStats: data.stats }));
+          break;
+        case "complete":
+          setProjectState((prev) => ({
+            ...prev,
+            step: "task_review",
+            sessionId: data.session_id,
+            taskMdPath: data.task_md_path,
+          }));
+          break;
+        case "error":
+          setProjectState((prev) => ({
+            ...prev,
+            step: "config",
+            error: data.content,
+          }));
+          break;
+      }
+    };
+
+    ws.onerror = () => {
+      setProjectState((prev) => ({
+        ...prev,
+        step: "config",
+        error: "WebSocket connection error",
+      }));
+    };
+
+    ws.onclose = () => {
+      if (projectWs.current === ws) projectWs.current = null;
+    };
+  }, []);
+
+  const resetProject = useCallback(() => {
+    if (projectWs.current) {
+      projectWs.current.close();
+      projectWs.current = null;
+    }
+    setProjectState(DEFAULT_PROJECT_STATE);
+  }, []);
+
+  const startCodeGeneration = useCallback(() => {
+    if (projectWs.current) projectWs.current.close();
+
+    setProjectState((prev) => ({
+      ...prev,
+      step: "code_generating",
+      agentLogs: [],
+      generatedFiles: [],
+      repoPath: null,
+      verifyPassed: null,
+      coverageMap: null,
+      error: null,
+    }));
+
+    const base = process.env.NEXT_PUBLIC_API_BASE || "";
+    const wsBase = base.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+    const ws = new WebSocket(`${wsBase}/api/v1/project/generate-code`);
+    projectWs.current = ws;
+
+    ws.onopen = () => {
+      ws.send(
+        JSON.stringify({
+          session_id: projectStateRef.current.sessionId,
+          task_content: projectStateRef.current.taskContent,
+        })
+      );
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      switch (data.type) {
+        case "phase":
+          setProjectState((prev) => ({
+            ...prev,
+            logs: [
+              ...prev.logs,
+              { type: "status", content: data.content, timestamp: Date.now() },
+            ],
+          }));
+          break;
+        case "agent_log":
+          setProjectState((prev) => ({
+            ...prev,
+            agentLogs: [
+              ...prev.agentLogs.slice(-499),  // 最多保留 500 条
+              {
+                timestamp: new Date().toLocaleTimeString(),
+                type: data.log_type,
+                tool: data.tool,
+                path: data.path,
+                content: data.content,
+              },
+            ],
+          }));
+          break;
+        case "file_created":
+          // 文件树在 complete 消息中整体更新
+          break;
+        case "verify_result":
+          setProjectState((prev) => ({
+            ...prev,
+            logs: [
+              ...prev.logs,
+              {
+                type: data.passed ? "status" : "error",
+                content: data.passed
+                  ? `验证通过：${data.report}`
+                  : `验证失败：${data.report}`,
+                timestamp: Date.now(),
+              },
+            ],
+          }));
+          break;
+        case "coverage":
+          setProjectState((prev) => ({ ...prev, coverageMap: data.map }));
+          break;
+        case "complete":
+          setProjectState((prev) => ({
+            ...prev,
+            step: "complete",
+            repoPath: data.repo_path,
+            generatedFiles: data.file_tree,
+            coverageMap: data.coverage_map,
+            verifyPassed: data.verify_passed,
+          }));
+          break;
+        case "error":
+          setProjectState((prev) => ({
+            ...prev,
+            step: "task_review",
+            error: data.content,
+          }));
+          break;
+      }
+    };
+
+    ws.onerror = () => {
+      setProjectState((prev) => ({
+        ...prev,
+        step: "task_review",
+        error: "WebSocket 连接错误",
+      }));
+    };
+
+    ws.onclose = () => {
+      if (projectWs.current === ws) projectWs.current = null;
+    };
+  }, []);
+
   // --- Clear All Persistence ---
   const clearAllPersistence = useCallback(() => {
     // Import clearAllStorage dynamically to avoid circular dependencies
@@ -2163,6 +2476,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         setSidebarDescription,
         sidebarNavOrder,
         setSidebarNavOrder,
+        projectState,
+        setProjectState,
+        uploadReference,
+        startTaskGeneration,
+        startCodeGeneration,
+        resetProject,
         clearAllPersistence,
       }}
     >

@@ -24,6 +24,7 @@ import {
   GripVertical,
   Check,
   X,
+  FolderGit2,
   LucideIcon,
 } from "lucide-react";
 import { useGlobal } from "@/context/GlobalContext";
@@ -50,6 +51,7 @@ const ALL_NAV_ITEMS: Record<string, { icon: LucideIcon; nameKey: string }> = {
   "/ideagen": { icon: Lightbulb, nameKey: "IdeaGen" },
   "/research": { icon: Microscope, nameKey: "Deep Research" },
   "/co_writer": { icon: Edit3, nameKey: "Co-Writer" },
+  "/project": { icon: FolderGit2, nameKey: "Project Creator" },
 };
 
 export default function Sidebar() {

@@ -1,0 +1,79 @@
+system: |
+  你是一个专业的课程任务书设计专家。请基于参考任务书的结构，
+  为新主题生成结构完全相同、内容全新的任务书章节。
+  要求：内容专业、具体、可执行；技术细节准确；难度适中。
+  直接输出该章节的 Markdown 内容，不要添加额外说明。
+
+section_prompts:
+  cover: |
+    生成任务书封面信息，主题：{theme}
+    包含：课程名称、适用专业、实习时间段（写具体学期或年份）
+    参考格式：
+    {reference_content}
+    直接输出 Markdown，不要前缀说明。
+
+  objectives: |
+    为主题"{theme}"生成课程背景与目标章节。
+    要求包含 4 条课程目标，涵盖：理论实践、自主学习、表达能力、创新动手四个维度。
+    参考知识：
+    {rag_context}
+    参考结构：
+    {reference_content}
+    直接输出 Markdown。
+
+  modules: |
+    为主题"{theme}"设计 3-4 个实践模块概述，每个模块一段描述。
+    参考知识：
+    {rag_context}
+    网络资料：
+    {web_context}
+    参考结构：
+    {reference_content}
+    直接输出 Markdown。
+
+  details: |
+    为主题"{theme}"的各模块生成详细设计内容，包含编号子任务和技术要求。
+    已生成的模块概述：
+    {modules_content}
+    参考知识：
+    {rag_context}
+    参考结构：
+    {reference_content}
+    直接输出 Markdown。
+
+  requirements: |
+    为主题"{theme}"生成作业要求章节，包含：报告格式、页数要求、报告提纲结构。
+    参考结构：
+    {reference_content}
+    直接输出 Markdown。
+
+  deliverables: |
+    为主题"{theme}"生成提交成果章节，列出：代码、报告、演示视频、数据等交付物要求。
+    参考结构：
+    {reference_content}
+    直接输出 Markdown。
+
+  grading: |
+    为主题"{theme}"生成成绩考核章节，包含：评分维度（表格形式）和优秀/良好/及格/不及格的分级标准。
+    参考结构：
+    {reference_content}
+    直接输出 Markdown（包含 Markdown 表格）。
+
+  schedule: |
+    为主题"{theme}"生成时间安排章节，包含各阶段名称、时间段和主要任务。
+    以表格形式呈现，共 4-6 个阶段。
+    参考结构：
+    {reference_content}
+    直接输出 Markdown（包含 Markdown 表格）。
+
+  references: |
+    为主题"{theme}"生成参考资源章节，包含：
+    1. 推荐教材书单（3-5 本，含作者和出版社）
+    2. 在线资源链接（相关官方文档、开源项目等，写通用链接格式即可）
+    参考知识：
+    {rag_context}
+    网络资料：
+    {web_context}
+    参考结构：
+    {reference_content}
+    直接输出 Markdown。

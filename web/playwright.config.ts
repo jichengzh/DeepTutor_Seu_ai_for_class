@@ -19,6 +19,11 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "chromium",
+      testMatch: "**/*.spec.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "ui-audit",
       testMatch: "**/*.audit.ts",
       use: { ...devices["Desktop Chrome"] },

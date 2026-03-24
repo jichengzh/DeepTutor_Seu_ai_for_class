@@ -1,0 +1,15 @@
+# Phase 3 placeholder — Code repository generation prompt
+system: |
+  Based on the task document below, create a complete project code repository skeleton.
+
+prompt: |
+  Task document:
+  {task_document}
+
+  Requirements:
+  1. Initialize a git repository
+  2. Create a clear project directory structure
+  3. Write README.md (project description, installation, usage)
+  4. Generate skeleton code for main modules (with comments)
+  5. Create requirements.txt or equivalent dependency file
+  6. Follow best practices for the relevant tech stack

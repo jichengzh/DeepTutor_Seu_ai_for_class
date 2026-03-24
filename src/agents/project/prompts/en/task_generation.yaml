@@ -1,0 +1,84 @@
+system: |
+  You are a professional course assignment design expert. Based on the structure of a reference
+  task document, generate a new task document with the same structure but entirely new content
+  for the given theme.
+  Requirements: professional, specific, actionable; technically accurate; appropriate difficulty.
+  Output only the Markdown content for the section, without extra commentary.
+
+section_prompts:
+  cover: |
+    Generate the cover section for a task document on theme: {theme}
+    Include: course name, target major/program, internship/project timeline.
+    Reference format:
+    {reference_content}
+    Output Markdown directly.
+
+  objectives: |
+    Generate the background and objectives section for theme "{theme}".
+    Include 4 course objectives covering: theory & practice, self-learning, communication, innovation.
+    Reference knowledge:
+    {rag_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  modules: |
+    Design 3-4 practice modules for theme "{theme}", one paragraph per module.
+    Reference knowledge:
+    {rag_context}
+    Web research:
+    {web_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  details: |
+    Generate detailed design content for each module of theme "{theme}",
+    with numbered sub-tasks and technical requirements.
+    Module overview already generated:
+    {modules_content}
+    Reference knowledge:
+    {rag_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  requirements: |
+    Generate the assignment requirements section for theme "{theme}",
+    including: report format, page count, report outline structure.
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  deliverables: |
+    Generate the deliverables section for theme "{theme}",
+    listing: code, report, demo video, data, and other submission requirements.
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  grading: |
+    Generate the grading/assessment section for theme "{theme}",
+    including: scoring dimensions (table format) and level criteria (Excellent/Good/Pass/Fail).
+    Reference structure:
+    {reference_content}
+    Output Markdown (with Markdown table) directly.
+
+  schedule: |
+    Generate the schedule section for theme "{theme}",
+    showing phases, dates, and key tasks in a table. Include 4-6 phases.
+    Reference structure:
+    {reference_content}
+    Output Markdown (with Markdown table) directly.
+
+  references: |
+    Generate the references/resources section for theme "{theme}", including:
+    1. Recommended textbooks (3-5 books with authors and publishers)
+    2. Online resources (official docs, open-source projects, etc.)
+    Reference knowledge:
+    {rag_context}
+    Web research:
+    {web_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
