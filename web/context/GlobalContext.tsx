@@ -258,6 +258,7 @@ interface ProjectState {
   theme: string;
   selectedKb: string;
   webSearchEnabled: boolean;
+  difficulty: "low" | "medium" | "high";
   uploadedFile: File | null;
   referenceStructure: Record<string, any> | null;
   // Task generation
@@ -498,6 +499,7 @@ const DEFAULT_PROJECT_STATE: ProjectState = {
   theme: "",
   selectedKb: "",
   webSearchEnabled: false,
+  difficulty: "medium",
   uploadedFile: null,
   referenceStructure: null,
   taskContent: "",
@@ -2337,6 +2339,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         JSON.stringify({
           session_id: projectStateRef.current.sessionId,
           task_content: projectStateRef.current.taskContent,
+          difficulty: projectStateRef.current.difficulty,
         })
       );
     };

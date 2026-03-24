@@ -223,7 +223,7 @@ export default function ProjectPage() {
   }, []);
 
   const {
-    step, theme, selectedKb, webSearchEnabled, referenceStructure,
+    step, theme, selectedKb, webSearchEnabled, difficulty, referenceStructure,
     taskContent, taskSections, currentSection, sessionId, logs, error,
     agentLogs, generatedFiles, verifyPassed, coverageMap,
   } = projectState;
@@ -392,6 +392,33 @@ export default function ProjectPage() {
                 </div>
                 <span className="text-sm text-gray-600">开启网络搜索</span>
               </label>
+              {/* Difficulty selector */}
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  代码难度
+                </label>
+                <div className="flex gap-2">
+                  {(["low", "medium", "high"] as const).map((level) => {
+                    const labels = { low: "低难度", medium: "中等", high: "高难度" };
+                    const hints = { low: "≤10文件 / ≤3000行", medium: "≤25文件 / ≤7000行", high: "≤40文件 / ≤10000行" };
+                    return (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => setProjectState((p) => ({ ...p, difficulty: level }))}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+                          difficulty === level
+                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
+                        }`}
+                      >
+                        <div className="font-medium">{labels[level]}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{hints[level]}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 

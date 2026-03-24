@@ -19,6 +19,12 @@ from src.logging.logger import get_logger
 
 logger = get_logger("CodeGenerator")
 
+DIFFICULTY_LIMITS: dict[str, dict[str, int]] = {
+    "low":    {"max_py_files": 10,  "max_lines": 3000},
+    "medium": {"max_py_files": 25,  "max_lines": 7000},
+    "high":   {"max_py_files": 40,  "max_lines": 10000},
+}
+
 
 def _find_claude_bin() -> str:
     """查找 claude CLI 路径：优先 PATH，降级到 ~/.local/bin/claude。"""
@@ -53,6 +59,7 @@ class CodeGenerator:
         spec: RequirementSpec,
         output_dir: str,
         ws_callback: Callable,
+        difficulty: str = "medium",
     ) -> dict:
         """
         执行 B→C→D 三个阶段，返回：
@@ -65,11 +72,11 @@ class CodeGenerator:
 
         # 阶段 B：架构规划
         await ws_callback({"type": "phase", "phase": "planning", "content": "正在制定项目架构..."})
-        await self._run_planning_phase(spec, repo_dir, ws_callback)
+        await self._run_planning_phase(spec, repo_dir, ws_callback, difficulty)
 
         # 阶段 C：代码生成
         await ws_callback({"type": "phase", "phase": "coding", "content": "Claude Agent 开始编写代码..."})
-        await self._run_coding_phase(spec, repo_dir, ws_callback)
+        await self._run_coding_phase(spec, repo_dir, ws_callback, difficulty)
 
         # 阶段 D：验证（最多修复 2 次）
         await ws_callback({"type": "phase", "phase": "verify", "content": "正在验证代码可运行性..."})
@@ -103,9 +110,10 @@ class CodeGenerator:
     # ── phases ────────────────────────────────────────────────────────────────
 
     async def _run_planning_phase(
-        self, spec: RequirementSpec, repo_dir: Path, ws_callback: Callable
+        self, spec: RequirementSpec, repo_dir: Path, ws_callback: Callable,
+        difficulty: str = "medium",
     ) -> None:
-        prompt = self._build_planning_prompt(spec)
+        prompt = self._build_planning_prompt(spec, difficulty)
         await self._run_agent(prompt, str(repo_dir), ["Write"], ws_callback)
 
         if not (repo_dir / "PLAN.md").exists():
@@ -117,11 +125,12 @@ class CodeGenerator:
             await ws_callback({"type": "status", "content": "PLAN.md 未生成，使用最小占位"})
 
     async def _run_coding_phase(
-        self, spec: RequirementSpec, repo_dir: Path, ws_callback: Callable
+        self, spec: RequirementSpec, repo_dir: Path, ws_callback: Callable,
+        difficulty: str = "medium",
     ) -> None:
         plan_path = repo_dir / "PLAN.md"
         plan_content = plan_path.read_text(encoding="utf-8") if plan_path.exists() else ""
-        prompt = self._build_coding_prompt(spec, plan_content)
+        prompt = self._build_coding_prompt(spec, plan_content, difficulty)
         await self._run_agent(
             prompt, str(repo_dir), ["Read", "Write", "Edit", "Bash", "Glob"], ws_callback
         )
@@ -262,11 +271,13 @@ class CodeGenerator:
 
     # ── prompt builders ───────────────────────────────────────────────────────
 
-    def _build_planning_prompt(self, spec: RequirementSpec) -> str:
+    def _build_planning_prompt(self, spec: RequirementSpec, difficulty: str = "medium") -> str:
         modules_desc = "\n".join(
             f"- 模块 {m.id}「{m.title}」：{'; '.join(m.objectives)}"
             for m in spec.modules
         )
+        limits = DIFFICULTY_LIMITS.get(difficulty, DIFFICULTY_LIMITS["medium"])
+        difficulty_label = {"low": "低", "medium": "中", "high": "高"}.get(difficulty, difficulty)
         return (
             f"请为以下项目制定详细的代码架构计划，只创建一个文件 PLAN.md。\n\n"
             f"项目主题：{spec.theme}\n"
@@ -279,16 +290,26 @@ class CodeGenerator:
             "3. 各模块与代码文件的对应关系（模块 ID → 文件列表）\n"
             "4. 主要类/函数接口定义\n"
             "5. 运行方式（入口命令）\n\n"
-            "只创建 PLAN.md，不创建其他文件。"
+            "只创建 PLAN.md，不创建其他文件。\n\n"
+            f"=== 强制约束（难度：{difficulty_label}级） ===\n"
+            f"1. 编程语言：仅允许 Python（.py）和 Shell 脚本（.sh/.bash）\n"
+            f"   - 禁止生成任何 C/C++/Java/Rust/Go 源文件\n"
+            f"   - 所有功能必须用 Python 实现\n"
+            f"2. 规模限制：\n"
+            f"   - Python 文件总数 ≤ {limits['max_py_files']} 个\n"
+            f"   - 全部代码总行数 ≤ {limits['max_lines']} 行\n"
+            f"   - 请在目录结构设计时就控制文件数量，不要过度拆分模块\n"
         )
 
-    def _build_coding_prompt(self, spec: RequirementSpec, plan_content: str) -> str:
+    def _build_coding_prompt(self, spec: RequirementSpec, plan_content: str, difficulty: str = "medium") -> str:
         modules_checklist = "\n".join(
             f"- [ ] 模块 {m.id}「{m.title}」\n"
             f"      技术要求：{'; '.join(m.technical_requirements)}\n"
             f"      交付物：{'; '.join(m.deliverables)}"
             for m in spec.modules
         )
+        limits = DIFFICULTY_LIMITS.get(difficulty, DIFFICULTY_LIMITS["medium"])
+        difficulty_label = {"low": "低", "medium": "中", "high": "高"}.get(difficulty, difficulty)
         return (
             "请根据以下项目计划，完整实现所有代码文件。\n\n"
             f"=== 架构计划（PLAN.md）===\n{plan_content}\n\n"
@@ -310,7 +331,19 @@ class CodeGenerator:
             "8. 全部写完后，运行 `pip install -r requirements.txt` 并验证主模块可导入\n"
             "9. 如发现错误立即修复，确保最终状态代码可运行\n\n"
             f"技术栈：{', '.join(spec.tech_stack)}\n"
-            f"环境：{spec.environment}"
+            f"环境：{spec.environment}\n\n"
+            f"=== 强制约束（难度：{difficulty_label}级） ===\n"
+            f"1. 编程语言：仅允许 Python（.py）和 Shell 脚本（.sh/.bash）\n"
+            f"   - 禁止生成任何 C/C++/Java/Rust/Go 源文件\n"
+            f"   - 所有功能必须用 Python 实现\n"
+            f"2. 规模限制：\n"
+            f"   - Python 文件总数 ≤ {limits['max_py_files']} 个\n"
+            f"   - 全部代码总行数 ≤ {limits['max_lines']} 行\n"
+            f"   - 每个函数不超过 50 行，优先用标准库\n"
+            f"3. 完成后运行以下命令自检：\n"
+            f"   find . -name '*.py' | wc -l   # 应 ≤ {limits['max_py_files']}\n"
+            f"   cat $(find . -name '*.py') | wc -l   # 应 ≤ {limits['max_lines']}\n"
+            f"   如超出限制，请合并文件或精简代码直到满足要求\n"
         )
 
     # ── helpers ───────────────────────────────────────────────────────────────

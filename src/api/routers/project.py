@@ -347,6 +347,7 @@ async def websocket_generate_code(websocket: WebSocket):
         data = await websocket.receive_json()
         session_id = data.get("session_id", "").strip()
         task_content = data.get("task_content", "")
+        difficulty = data.get("difficulty", "medium")
 
         if not session_id:
             await websocket.send_json({"type": "error", "content": "session_id 必填"})
@@ -383,6 +384,7 @@ async def websocket_generate_code(websocket: WebSocket):
             spec=spec,
             output_dir=output_dir,
             ws_callback=ws_callback,
+            difficulty=difficulty,
         )
 
         mgr.update_session(session_id, status="complete", repo_path=result["repo_path"])
