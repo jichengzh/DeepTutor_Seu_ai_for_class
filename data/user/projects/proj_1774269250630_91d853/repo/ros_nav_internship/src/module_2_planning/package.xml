@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>module_2_planning</name>
+  <version>0.1.0</version>
+  <description>
+    Module 2: Motion Planning — Hybrid A* global planner, dynamic obstacle
+    prediction with Kalman filter, DWB trajectory critic plugin, B-spline
+    trajectory optimizer and velocity clipper for ROS 2 Nav2.
+  </description>
+  <maintainer email="intern@example.com">ROS Nav Intern</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_gtest</buildtool_depend>
+
+  <!-- Core ROS 2 -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+
+  <!-- Nav2 stack -->
+  <depend>nav2_core</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav2_util</depend>
+  <depend>nav2_msgs</depend>
+
+  <!-- DWB local planner & critics -->
+  <depend>dwb_core</depend>
+  <depend>dwb_msgs</depend>
+
+  <!-- Message types -->
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <!-- TF -->
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <!-- Plugin infrastructure -->
+  <depend>pluginlib</depend>
+
+  <!-- Test dependencies -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

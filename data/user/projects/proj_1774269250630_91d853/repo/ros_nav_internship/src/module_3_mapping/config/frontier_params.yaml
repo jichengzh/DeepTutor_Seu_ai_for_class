@@ -1,0 +1,41 @@
+/**:
+  ros__parameters:
+    # ── Frontier size & clustering ────────────────────────────────────────────
+    # Minimum frontier size in metres.  Frontiers smaller than this are
+    # discarded after clustering.
+    min_frontier_size: 0.5         # [m]
+
+    # Radius around the frontier centroid used to count unknown cells when
+    # computing the information gain score.
+    exploration_radius: 10.0       # [m]
+
+    # ── Scoring weights ───────────────────────────────────────────────────────
+    # Score = info_gain_weight * gain + distance_weight * (1 / distance)
+    # Weights need not sum to 1.0, but that is recommended for interpretability.
+    info_gain_weight: 0.7
+    distance_weight:  0.3
+
+    # ── Topics ────────────────────────────────────────────────────────────────
+    map_topic:          "/map"
+    goal_topic:         "/goal_pose"
+    frontier_vis_topic: "/frontier_markers"
+
+    # ── TF frames ─────────────────────────────────────────────────────────────
+    robot_frame: "base_link"
+    map_frame:   "map"
+
+    # ── Nav2 action ───────────────────────────────────────────────────────────
+    # Name of the NavigateToPose action server to use.
+    navigate_to_pose_action: "navigate_to_pose"
+
+    # ── Exploration behaviour ─────────────────────────────────────────────────
+    # Maximum time to wait (seconds) for the action server at startup.
+    action_server_timeout_sec: 5.0
+
+    # If true, the node will keep spinning even after no frontiers are detected
+    # (the map may expand later as new sensor data arrives).
+    keep_alive_on_no_frontiers: true
+
+    # Minimum Euclidean distance [m] between the robot and the chosen frontier
+    # centroid.  Goals closer than this are skipped to avoid trivial moves.
+    min_goal_distance: 1.0         # [m]

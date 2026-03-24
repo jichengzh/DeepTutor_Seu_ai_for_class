@@ -1,0 +1,52 @@
+# docker-compose.yml — 多容器编排（仿真 + 机器人 + 测试）
+version: '3.8'
+
+services:
+  humble_sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.humble
+    image: ros_nav:humble
+    container_name: ros_nav_humble_sim
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - ROBOT_COUNT=3
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../src:/ros2_ws/src:ro
+      - ../results:/ros2_ws/results
+    network_mode: host
+    privileged: true
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch module_5_multi_robot multi_robot_sim.launch.py robot_count:=3"
+
+  noetic_compat:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.noetic
+    image: ros_nav:noetic
+    container_name: ros_nav_noetic_compat
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    network_mode: host
+    command: >
+      bash -c "source /opt/ros/noetic/setup.bash && roscore"
+
+  test_runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.humble
+    image: ros_nav:humble
+    container_name: ros_nav_test_runner
+    volumes:
+      - ../src:/ros2_ws/src:ro
+      - ../results:/ros2_ws/results
+    network_mode: host
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               bash src/module_6_testing/scripts/run_all_tests.sh"
+    depends_on:
+      - humble_sim

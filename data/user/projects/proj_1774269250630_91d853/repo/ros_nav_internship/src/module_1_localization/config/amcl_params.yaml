@@ -1,0 +1,108 @@
+amcl:
+  ros__parameters:
+    use_sim_time: false
+
+    # ----------------------------------------------------------------
+    # Motion model noise (differential drive)
+    # alpha1: noise in rotation from rotational motion
+    # alpha2: noise in rotation from translational motion
+    # alpha3: noise in translation from translational motion
+    # alpha4: noise in translation from rotational motion
+    # alpha5: (unused for differential drive, used for omnidirectional)
+    # ----------------------------------------------------------------
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+
+    # ----------------------------------------------------------------
+    # Frame IDs
+    # ----------------------------------------------------------------
+    base_frame_id: "base_footprint"
+    global_frame_id: "map"
+    odom_frame_id: "odom"
+
+    # ----------------------------------------------------------------
+    # Laser / beam skip
+    # ----------------------------------------------------------------
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    do_beamskip: false
+
+    # ----------------------------------------------------------------
+    # Laser model
+    # ----------------------------------------------------------------
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+    laser_max_range: 100.0
+    laser_min_range: -1.0
+    laser_model_type: "likelihood_field"
+    max_beams: 60
+
+    # ----------------------------------------------------------------
+    # Particle filter
+    # ----------------------------------------------------------------
+    max_particles: 2000
+    min_particles: 500
+    pf_err: 0.05
+    pf_z: 0.99
+
+    # ----------------------------------------------------------------
+    # Recovery
+    # ----------------------------------------------------------------
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+
+    # ----------------------------------------------------------------
+    # Resampling / update thresholds
+    # ----------------------------------------------------------------
+    resample_interval: 1
+    update_min_a: 0.2       # Minimum rotation before filter update (rad)
+    update_min_d: 0.25      # Minimum translation before filter update (m)
+
+    # ----------------------------------------------------------------
+    # Motion model type
+    # ----------------------------------------------------------------
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+
+    # ----------------------------------------------------------------
+    # Pose saving
+    # ----------------------------------------------------------------
+    save_pose_rate: 0.5
+
+    # ----------------------------------------------------------------
+    # Sensor model weights
+    # z_hit   – weight for Gaussian hit component
+    # z_max   – weight for max-range component
+    # z_rand  – weight for uniform random component
+    # z_short – weight for short (unexpected obstacle) component
+    # sigma_hit – Gaussian std-dev for hit component (m)
+    # ----------------------------------------------------------------
+    sigma_hit: 0.2
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+
+    # ----------------------------------------------------------------
+    # TF
+    # ----------------------------------------------------------------
+    tf_broadcast: true
+    transform_tolerance: 1.0
+
+    # ----------------------------------------------------------------
+    # Topics
+    # ----------------------------------------------------------------
+    scan_topic: scan
+
+    # ----------------------------------------------------------------
+    # Initial pose (loaded at startup; overridden by /initialpose topic)
+    # ----------------------------------------------------------------
+    set_initial_pose: false
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0

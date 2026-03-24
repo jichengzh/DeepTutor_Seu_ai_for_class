@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>module_1_localization</name>
+  <version>0.1.0</version>
+  <description>
+    Module 1: Robot Localization for ROS2 Nav Internship.
+    Provides sensor synchronization, TF alignment, AMCL likelihood field model,
+    and a full LifecycleNode-based localization stack.
+  </description>
+  <maintainer email="intern@example.com">ROS Nav Intern</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Core ROS2 -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+
+  <!-- Nav2 stack -->
+  <depend>nav2_util</depend>
+  <depend>nav2_msgs</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav2_amcl</depend>
+
+  <!-- Message types -->
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+
+  <!-- TF2 -->
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <!-- Message synchronization -->
+  <depend>message_filters</depend>
+
+  <!-- State estimation -->
+  <depend>robot_localization</depend>
+
+  <!-- Diagnostics -->
+  <depend>diagnostic_updater</depend>
+
+  <!-- Test dependencies -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

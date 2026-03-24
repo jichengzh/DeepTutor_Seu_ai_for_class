@@ -1,0 +1,27 @@
+# ROS2 Python dependencies
+# Core
+colcon-common-extensions==0.3.0
+catkin-pkg==0.5.2
+empy==3.3.4
+lark==1.1.1
+
+# ML/Vision
+ultralytics==8.0.196
+torch==2.0.1
+torchvision==0.15.2
+numpy==1.24.3
+opencv-python==4.8.0.76
+
+# Data / Persistence
+sqlalchemy==2.0.19
+pyyaml==6.0.1
+
+# Testing
+pytest==7.4.0
+pytest-ros==0.1.0
+lxml==4.9.3
+
+# Analysis / Visualization
+matplotlib==3.7.2
+pandas==2.0.3
+scipy==1.11.1

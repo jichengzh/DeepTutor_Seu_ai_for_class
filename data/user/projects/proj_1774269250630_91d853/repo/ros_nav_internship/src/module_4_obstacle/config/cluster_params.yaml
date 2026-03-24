@@ -1,0 +1,23 @@
+/**:
+  ros__parameters:
+    # ── EuclideanCluster parameters ───────────────────────────────────────────
+
+    # cluster_tolerance:
+    #   Maximum Euclidean distance between points in the same cluster.
+    #   Smaller value → tighter clusters; larger → merges nearby objects.
+    #   Units: m
+    cluster_tolerance: 0.3
+
+    # min_cluster_size:
+    #   Clusters with fewer points are discarded as noise.
+    min_cluster_size: 10
+
+    # max_cluster_size:
+    #   Clusters with more points are discarded (e.g. reflective surfaces).
+    max_cluster_size: 10000
+
+    # voxel_leaf_size:
+    #   VoxelGrid leaf size for downsampling before clustering.
+    #   Larger value → fewer points, faster processing, lower resolution.
+    #   Units: m
+    voxel_leaf_size: 0.05

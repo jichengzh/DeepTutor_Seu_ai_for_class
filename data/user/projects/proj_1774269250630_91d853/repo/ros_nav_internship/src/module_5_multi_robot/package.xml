@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>module_5_multi_robot</name>
+  <version>0.1.0</version>
+  <description>
+    Module 5: Multi-Robot Coordination — CBBA task allocation, fleet execution,
+    cross-robot TF broadcasting, RSTC pre-planning, and conflict resolution for
+    ROS2 Humble multi-robot navigation systems.
+  </description>
+  <maintainer email="intern@example.com">ROS2 Nav Intern</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>rosbag2_cpp</depend>
+
+  <!-- Python script dependencies -->
+  <exec_depend>python3-rclpy</exec_depend>
+  <exec_depend>python3-sqlite3</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

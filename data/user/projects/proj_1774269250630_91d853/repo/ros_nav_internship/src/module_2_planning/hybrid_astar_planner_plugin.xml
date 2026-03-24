@@ -1,0 +1,11 @@
+<library path="hybrid_astar_planner">
+  <class name="module_2_planning/HybridAStarPlanner"
+         type="module_2_planning::HybridAStarPlanner"
+         base_class_type="nav2_core::GlobalPlanner">
+    <description>
+      Hybrid A* global planner with non-holonomic motion primitives, Dubins
+      heuristic, and RS curve short-cutting.  Suitable for car-like robots
+      that must respect a minimum turning radius.
+    </description>
+  </class>
+</library>

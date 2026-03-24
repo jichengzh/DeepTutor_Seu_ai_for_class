@@ -1,0 +1,11 @@
+<library path="dwb_predictor_plugin">
+  <class name="module_2_planning/DWBPredictorPlugin"
+         type="module_2_planning::DWBPredictorPlugin"
+         base_class_type="dwb_core::TrajectoryCritic">
+    <description>
+      DWB trajectory critic that penalises paths intersecting predicted
+      dynamic obstacle occupancy.  Works together with
+      DynamicObstaclePredictor which publishes /predicted_occupancy.
+    </description>
+  </class>
+</library>

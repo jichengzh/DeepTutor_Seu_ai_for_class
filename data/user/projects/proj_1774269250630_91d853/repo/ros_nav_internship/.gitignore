@@ -1,0 +1,16 @@
+build/
+install/
+log/
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+*.swp
+*.swo
+devel/
+*.bag
+*.db3
+results/*.xml
+results/*.json
+!results/.gitkeep
+src/module_3_mapping/models/*.pt

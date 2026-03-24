@@ -1,0 +1,30 @@
+# Dockerfile.noetic — Ubuntu 20.04 + ROS1 Noetic (兼容层)
+FROM ubuntu:20.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=noetic
+ENV LANG=en_US.UTF-8
+
+RUN apt-get update && apt-get install -y \
+    curl gnupg2 lsb-release locales python3-pip git \
+    && locale-gen en_US en_US.UTF-8 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu focal main" \
+    > /etc/apt/sources.list.d/ros-latest.list' \
+    && curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt-key add -
+
+RUN apt-get update && apt-get install -y \
+    ros-noetic-desktop-full \
+    ros-noetic-navigation \
+    ros-noetic-slam-gmapping \
+    ros-noetic-robot-localization \
+    python3-catkin-tools \
+    python3-rosdep \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip3 install -r /tmp/requirements.txt
+
+WORKDIR /catkin_ws
+CMD ["/bin/bash"]

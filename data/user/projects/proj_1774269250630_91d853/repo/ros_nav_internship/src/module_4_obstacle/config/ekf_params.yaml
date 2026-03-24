@@ -1,0 +1,33 @@
+/**:
+  ros__parameters:
+    # ── ObstacleEKF noise parameters ─────────────────────────────────────────
+    #
+    # process_noise_std:
+    #   Standard deviation of the white-noise acceleration model.
+    #   Larger value → filter trusts measurements more, reacts faster to
+    #   manoeuvring obstacles; smaller value → smoother but slower adaptation.
+    #   Units: m/s²
+    process_noise_std: 0.1
+
+    # measurement_noise_std:
+    #   Standard deviation of the position measurement (e.g. cluster centroid).
+    #   Increase if the detector is noisy; decrease if it is very accurate.
+    #   Units: m
+    measurement_noise_std: 0.2
+
+    # max_association_dist:
+    #   Hungarian / nearest-neighbour gate distance.  A new detection farther
+    #   than this from every existing track will create a new track.
+    #   Units: m
+    max_association_dist: 1.5
+
+    # max_age:
+    #   A track is removed after this many seconds without a matching detection.
+    #   Units: s
+    max_age: 1.0
+
+    # publish_rate_hz:
+    #   Rate at which the tracker predicts and publishes /tracked_obstacles.
+    #   Should be at least as fast as the detector.
+    #   Units: Hz
+    publish_rate_hz: 10.0

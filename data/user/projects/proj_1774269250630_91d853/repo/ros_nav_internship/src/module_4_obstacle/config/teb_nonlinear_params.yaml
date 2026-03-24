@@ -1,0 +1,36 @@
+/**:
+  ros__parameters:
+    # ── TebNonlinearPlugin parameters ─────────────────────────────────────────
+    #
+    # These parameters are loaded under the "teb." prefix by TebNonlinearPlugin.
+    # Override them in your bringup launch file or via the CLI:
+    #   ros2 param set /your_node teb.v_max 1.2
+
+    teb:
+      # v_max:
+      #   Absolute maximum linear velocity.  The actual allowed speed at a
+      #   given steering angle is v_max * cos(steering_angle / 2).
+      #   Units: m/s
+      v_max: 1.5
+
+      # alpha_ddot_max:
+      #   Maximum angular acceleration (yaw rate of change).
+      #   Used as the hard limit returned by maxAngularAcceleration().
+      #   Units: rad/s²
+      alpha_ddot_max: 1.0
+
+      # wheel_base:
+      #   Distance between the front and rear axles.
+      #   Used to compute minTurningRadius = wheel_base / tan(max_steering_angle).
+      #   Units: m
+      wheel_base: 0.5
+
+      # max_steering_angle:
+      #   Maximum physical steering angle of the front wheels.
+      #   Units: rad  (~40° = 0.698 rad)
+      max_steering_angle: 0.698
+
+      # max_linear_accel:
+      #   Maximum linear acceleration / deceleration.
+      #   Units: m/s²
+      max_linear_accel: 0.5
