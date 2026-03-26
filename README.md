@@ -85,6 +85,11 @@
 • **Comprehensive Research & Literature Review**: Conduct in-depth topic exploration with systematic analysis. Identify patterns, connect related concepts across disciplines, and synthesize existing research findings.<br>
 • **Novel Insight Discovery**: Generate structured learning materials and uncover knowledge gaps. Identify promising new research directions through intelligent cross-domain knowledge synthesis.
 
+### 🛠️ AI-Powered Project Creator
+• **Task Document Generation**: Upload a reference internship/project task document and provide a new theme — AI generates a brand-new, structurally identical task document with full content via streaming output.<br>
+• **Code Repository Generation**: Based on the generated task document, automatically invokes **Claude Code CLI** as an agent to create a complete Git repository with project skeleton code, unit tests, and documentation.<br>
+• **Difficulty Control**: Choose from three difficulty levels (Low / Medium / High) to control the scale of the generated codebase (file count and line count limits).
+
 ---
 
 <div align="center">
@@ -1158,6 +1163,93 @@ asyncio.run(main())
 
 ---
 
+<details>
+<summary><b>🛠️ Project Creator</b></summary>
+
+> **AI-powered project scaffolding system** that generates complete task documents and code repositories from a reference document and a new theme. Powered by LLM streaming + **Claude Code CLI** agent.
+
+**Core Features**
+
+| Feature | Description |
+|:---:|:---|
+| Task Document Generation | Upload a reference `.docx`/`.pdf` task document, enter a new theme — LLM generates a full structured task document with streaming output |
+| Code Repository Generation | Claude Code CLI agent creates a complete Git repo: directory structure, Python source files, unit tests, README, requirements.txt |
+| Difficulty Levels | Low (≤10 files / ≤3,000 lines) · Medium (≤25 files / ≤7,000 lines) · High (≤40 files / ≤10,000 lines) |
+| Python-Only Constraint | Generated code uses Python + Shell scripts only; C++/Java/Rust etc. are explicitly prohibited |
+| RAG + Web Search | Optionally retrieve from local knowledge base and web during task document generation |
+| Real-time Streaming | WebSocket-based live output: task document chunks, chapter progress, agent tool-use logs, file tree updates |
+| Session Management | JSON-based session store; download generated task document as `.md` or `.docx` |
+
+**Prerequisites — Claude Code CLI**
+
+The code generation phase requires the `claude` CLI to be installed and authenticated on the server:
+
+```bash
+# Install Claude Code CLI
+npm install -g @anthropic-ai/claude-code
+
+# Authenticate (OAuth — uses your Claude Pro subscription, no API key needed)
+claude login
+```
+
+> The system reuses the OAuth token stored in `~/.claude/.credentials.json`. No `ANTHROPIC_API_KEY` environment variable is required.
+
+**Usage**
+
+1. Visit `http://<server>:{frontend_port}/project`
+2. **Step 1 — Configure**: Upload a reference task document (`.docx` or `.pdf`), enter the new project theme, optionally select a knowledge base and enable web search, choose a difficulty level
+3. **Step 2 — Generate Task Document**: Watch the task document stream in real time, chapter by chapter
+4. **Step 3 — Review**: Preview the full Markdown output, download as `.md` or `.docx`
+5. **Step 4 — Generate Code**: Claude Code CLI agent runs in the background; monitor tool-use logs and live file tree. Download the completed repository when done.
+
+**Difficulty Levels**
+
+| Level | Max `.py` Files | Max Total Lines |
+|-------|----------------|----------------|
+| Low   | 10             | 3,000          |
+| Medium | 25            | 7,000          |
+| High  | 40             | 10,000         |
+
+**Python API**
+
+```python
+import asyncio
+from src.agents.project import ProjectCoordinator, get_project_session_manager
+from src.agents.project.agents.task_parser import TaskParser
+
+# Step 1: Parse reference document
+parser = TaskParser()
+structure = parser.parse_docx("reference_task.docx")
+
+# Step 2: Generate task document
+coordinator = ProjectCoordinator(output_dir="data/user/projects/my_project")
+coordinator.set_ws_callback(lambda msg: print(msg))
+result = await coordinator.generate_task_document(
+    theme="ROS Robot Navigation Internship",
+    reference_structure=structure,
+)
+
+# Step 3: Generate code repository (requires claude CLI)
+from src.agents.project.agents.code_generator import CodeGenerator
+from src.agents.project.agents.requirement_extractor import RequirementExtractor
+
+extractor = RequirementExtractor()
+spec = await extractor.extract(result["content"], lambda msg: None)
+
+generator = CodeGenerator()
+repo = await generator.generate(
+    spec=spec,
+    output_dir="data/user/projects/my_project",
+    ws_callback=lambda msg: print(msg),
+    difficulty="medium",
+)
+print(f"Repository created at: {repo['repo_path']}")
+```
+
+</details>
+
+---
+
 ### 📖 Module Documentation
 
 <table>
@@ -1181,6 +1273,9 @@ asyncio.run(main())
 </tr>
 <tr>
 <td align="center" colspan="4"><a href="src/agents/ideagen/README.md">Automated IdeaGen Module</a></td>
+</tr>
+<tr>
+<td align="center" colspan="4"><a href="src/agents/project/README.md">Project Creator Module</a></td>
 </tr>
 </table>
 
