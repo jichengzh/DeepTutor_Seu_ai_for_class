@@ -5,6 +5,7 @@ TaskParser — 解析参考任务书文档，提取章节结构。
 支持 .docx 和 .pdf 格式。返回标准化的结构字典，供 TaskGenerator 使用。
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -21,16 +22,54 @@ SECTION_PATTERNS: dict[str, list[str]] = {
     "references":   ["参考资料", "教材", "附录", "参考文献", "参考资源"],
 }
 
+# 语义推断词表（当检测到中文大纲序号但无关键词匹配时使用）
+_SEMANTIC_HINTS: dict[str, list[str]] = {
+    "objectives":   ["目标", "背景", "简介", "概述", "前言", "介绍"],
+    "modules":      ["模块", "阶段", "任务", "内容概要", "章节概述"],
+    "details":      ["设计", "实现", "详细", "具体", "方案", "内容"],
+    "requirements": ["要求", "规范", "标准", "格式"],
+    "deliverables": ["成果", "提交", "交付", "输出"],
+    "grading":      ["考核", "评分", "评价", "分值", "分数"],
+    "schedule":     ["时间", "进度", "计划", "安排", "周", "日程"],
+    "references":   ["参考", "资料", "文献", "附录", "书目"],
+}
+
+# 中文大纲序号正则（标题行判定）
+_CHINESE_HEADING_RE = re.compile(
+    r"^(?:"
+    r"[一二三四五六七八九十百]+[、.．]"           # 一、二、三、
+    r"|第[一二三四五六七八九十百\d]+[章节部分]"   # 第一章、第二节
+    r"|（[一二三四五六七八九十\d]+）"             # （一）（二）
+    r"|\([一二三四五六七八九十\d]+\)"             # (一)(二)
+    r"|[①②③④⑤⑥⑦⑧⑨⑩]"                  # 带圈数字
+    r"|\d+[.、．]\s"                             # 1. 1、(后跟空格)
+    r")"
+)
+
 MAX_SUMMARY_LEN = 2000
 
 
 def _match_section(text: str) -> str | None:
     """Return the section key if text matches any pattern, else None."""
-    text_lower = text.lower()
     for key, patterns in SECTION_PATTERNS.items():
         for p in patterns:
             if p in text:
                 return key
+    return None
+
+
+def _is_chinese_heading(text: str) -> bool:
+    """判断文本是否以中文大纲序号开头（且长度合理 <60 字）。"""
+    return bool(_CHINESE_HEADING_RE.match(text.strip())) and len(text.strip()) < 60
+
+
+def _infer_section_by_semantics(title: str, existing_sections: dict) -> str | None:
+    """当标题含序号但无关键词匹配时，通过语义词推断章节 key。已占用的 key 跳过。"""
+    for key, hints in _SEMANTIC_HINTS.items():
+        if key in existing_sections:
+            continue
+        if any(h in title for h in hints):
+            return key
     return None
 
 
@@ -67,14 +106,20 @@ class TaskParser:
         current_title: str = ""
         current_content_lines: list[str] = []
         has_grading_table = False
+        detected_headings: list[tuple[str, str]] = []  # (heading_text, mapped_key)
 
         def _flush():
             nonlocal current_section, current_content_lines, current_title
             if current_section:
-                sections[current_section] = {
-                    "title": current_title,
-                    "content": "\n".join(current_content_lines).strip(),
-                }
+                existing = sections.get(current_section)
+                if existing:
+                    # 同一章节多次匹配时追加内容，避免覆盖
+                    existing["content"] = (existing["content"] + "\n" + "\n".join(current_content_lines)).strip()
+                else:
+                    sections[current_section] = {
+                        "title": current_title,
+                        "content": "\n".join(current_content_lines).strip(),
+                    }
             current_section = None
             current_title = ""
             current_content_lines = []
@@ -92,11 +137,20 @@ class TaskParser:
             # Check if this paragraph is a section heading
             is_heading = para.style.name.startswith("Heading") if para.style else False
             matched = _match_section(text)
+            is_cn_heading = _is_chinese_heading(text)
 
-            if matched and (is_heading or len(text) < 40):
+            if matched and (is_heading or is_cn_heading or len(text) < 40):
                 _flush()
                 current_section = matched
                 current_title = text
+                detected_headings.append((text, matched))
+            elif is_cn_heading and not matched:
+                # 中文序号标题但无关键词 → 语义推断，否则归入 details
+                inferred = _infer_section_by_semantics(text, sections)
+                _flush()
+                current_section = inferred or "details"
+                current_title = text
+                detected_headings.append((text, current_section))
             elif current_section:
                 current_content_lines.append(text)
 
@@ -129,6 +183,7 @@ class TaskParser:
             "module_count": max(module_count, 0),
             "has_grading_table": has_grading_table,
             "raw_text": "\n".join(raw_lines),
+            "detected_headings": detected_headings,
         }
 
     def parse_pdf(self, file_path: str) -> dict[str, Any]:
@@ -165,14 +220,19 @@ class TaskParser:
         current_section: str | None = None
         current_title: str = ""
         current_content_lines: list[str] = []
+        detected_headings: list[tuple[str, str]] = []
 
         def _flush():
             nonlocal current_section, current_content_lines, current_title
             if current_section:
-                sections[current_section] = {
-                    "title": current_title,
-                    "content": "\n".join(current_content_lines).strip(),
-                }
+                existing = sections.get(current_section)
+                if existing:
+                    existing["content"] = (existing["content"] + "\n" + "\n".join(current_content_lines)).strip()
+                else:
+                    sections[current_section] = {
+                        "title": current_title,
+                        "content": "\n".join(current_content_lines).strip(),
+                    }
             current_section = None
             current_title = ""
             current_content_lines = []
@@ -182,10 +242,19 @@ class TaskParser:
             if not text:
                 continue
             matched = _match_section(text)
+            is_cn_heading = _is_chinese_heading(text)
+
             if matched and len(text) < 60:
                 _flush()
                 current_section = matched
                 current_title = text
+                detected_headings.append((text, matched))
+            elif is_cn_heading and not matched:
+                inferred = _infer_section_by_semantics(text, sections)
+                _flush()
+                current_section = inferred or "details"
+                current_title = text
+                detected_headings.append((text, current_section))
             elif current_section:
                 current_content_lines.append(text)
 
@@ -196,6 +265,7 @@ class TaskParser:
             "module_count": 0,
             "has_grading_table": False,
             "raw_text": "\n".join(l.strip() for l in raw_lines if l.strip()),
+            "detected_headings": detected_headings,
         }
 
     def extract_structure_summary(self, parsed: dict[str, Any]) -> str:

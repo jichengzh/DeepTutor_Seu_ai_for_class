@@ -259,6 +259,8 @@ interface ProjectState {
   selectedKb: string;
   webSearchEnabled: boolean;
   difficulty: "low" | "medium" | "high";
+  cliTool: "claude" | "codex";
+  codexApiKey: string;
   uploadedFile: File | null;
   referenceStructure: Record<string, any> | null;
   // Task generation
@@ -500,6 +502,8 @@ const DEFAULT_PROJECT_STATE: ProjectState = {
   selectedKb: "",
   webSearchEnabled: false,
   difficulty: "medium",
+  cliTool: "claude",
+  codexApiKey: "",
   uploadedFile: null,
   referenceStructure: null,
   taskContent: "",
@@ -2337,9 +2341,11 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     ws.onopen = () => {
       ws.send(
         JSON.stringify({
-          session_id: projectStateRef.current.sessionId,
-          task_content: projectStateRef.current.taskContent,
-          difficulty: projectStateRef.current.difficulty,
+          session_id:    projectStateRef.current.sessionId,
+          task_content:  projectStateRef.current.taskContent,
+          difficulty:    projectStateRef.current.difficulty,
+          cli_tool:      projectStateRef.current.cliTool,
+          codex_api_key: projectStateRef.current.codexApiKey || undefined,
         })
       );
     };

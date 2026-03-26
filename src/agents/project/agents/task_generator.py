@@ -105,7 +105,30 @@ class TaskGenerator:
         system_prompt = self._prompts.get("system", "You are a helpful assistant.")
         section_prompts = self._prompts.get("section_prompts", {})
 
-        for section_key, section_title in self._section_order:
+        # 动态章节顺序：优先使用 reference_structure 中的章节（用户可增删）
+        ref_sections_map = reference_structure.get("sections", {})
+        if ref_sections_map:
+            standard_keys = [k for k, _ in self._section_order]
+            # 保持标准章节顺序，追加用户自定义 key
+            ordered_keys = [k for k in standard_keys if k in ref_sections_map]
+            ordered_keys += [k for k in ref_sections_map if k not in standard_keys]
+            section_order = [
+                (k, ref_sections_map[k].get("title", k) or dict(self._section_order).get(k, k))
+                for k in ordered_keys
+            ]
+        else:
+            section_order = self._section_order
+
+        # 通用 prompt 模板（用于用户自定义章节）
+        default_prompt = (
+            "请为主题\"{theme}\"生成\"{section_title}\"章节内容。\n"
+            "参考知识：{rag_context}\n"
+            "网络资料：{web_context}\n"
+            "参考内容：{reference_content}\n"
+            "直接输出 Markdown，语言简洁专业。"
+        )
+
+        for section_key, section_title in section_order:
             await ws_callback({"type": "status", "content": f"正在生成章节：{section_title}"})
 
             # 获取该章节在参考文档中的内容
@@ -113,8 +136,8 @@ class TaskGenerator:
             ref_section = ref_sections.get(section_key, {})
             reference_content = ref_section.get("content", "") if ref_section else ""
 
-            # 构建 prompt
-            prompt_template = section_prompts.get(section_key, "请为主题 {theme} 生成 {section_title} 章节内容。")
+            # 构建 prompt（标准 key 用预设模板，自定义 key 用通用模板）
+            prompt_template = section_prompts.get(section_key, default_prompt)
             prompt = prompt_template.format(
                 theme=theme,
                 rag_context=rag_context[:1500] if rag_context else "（无）",
@@ -145,8 +168,8 @@ class TaskGenerator:
                 "content": section_content,
             })
 
-        # Step 4: 组合并导出
-        full_md = self._assemble_markdown(theme, sections)
+        # Step 4: 组合并导出（按实际生成的章节顺序）
+        full_md = self._assemble_markdown(theme, sections, section_order)
         md_path = self._save_markdown(full_md)
         docx_path = self._export_docx(full_md)
 
@@ -188,11 +211,15 @@ class TaskGenerator:
             logger.warning(f"Web search failed: {e}")
             return ""
 
-    def _assemble_markdown(self, theme: str, sections: dict[str, str]) -> str:
+    def _assemble_markdown(
+        self, theme: str, sections: dict[str, str],
+        section_order: list[tuple[str, str]] | None = None,
+    ) -> str:
         """将各章节内容组合为完整 Markdown 文档。"""
+        order = section_order if section_order is not None else self._section_order
         header = f"# {theme} — 实习任务书\n\n"
         parts = [header]
-        for section_key, _ in self._section_order:
+        for section_key, _ in order:
             content = sections.get(section_key, "")
             if content.strip():
                 parts.append(content.strip())

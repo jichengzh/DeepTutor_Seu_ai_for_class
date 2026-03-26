@@ -345,9 +345,11 @@ async def websocket_generate_code(websocket: WebSocket):
 
     try:
         data = await websocket.receive_json()
-        session_id = data.get("session_id", "").strip()
-        task_content = data.get("task_content", "")
-        difficulty = data.get("difficulty", "medium")
+        session_id    = data.get("session_id", "").strip()
+        task_content  = data.get("task_content", "")
+        difficulty    = data.get("difficulty", "medium")
+        cli_tool      = data.get("cli_tool", "claude")
+        codex_api_key = data.get("codex_api_key") or None
 
         if not session_id:
             await websocket.send_json({"type": "error", "content": "session_id 必填"})
@@ -363,10 +365,14 @@ async def websocket_generate_code(websocket: WebSocket):
 
         output_dir = str(_get_project_output_dir(session_id))
 
-        # 检查 claude CLI
+        # 按 cli_tool 选择生成器
         try:
-            from src.agents.project.agents.code_generator import CodeGenerator
-            generator = CodeGenerator()
+            if cli_tool == "codex":
+                from src.agents.project.agents.code_generator import CodexGenerator
+                generator = CodexGenerator(api_key=codex_api_key)
+            else:
+                from src.agents.project.agents.code_generator import CodeGenerator
+                generator = CodeGenerator()
         except EnvironmentError as e:
             await websocket.send_json({"type": "error", "content": str(e)})
             return

@@ -212,20 +212,21 @@ export default function ProjectPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
+  const [newSectionTitle, setNewSectionTitle] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch knowledge base list
   useEffect(() => {
     fetch(apiUrl("/api/v1/knowledge/list"))
       .then((r) => r.json())
-      .then((data) => setKbs(data.knowledge_bases?.map((kb: any) => kb.name) || []))
+      .then((data) => setKbs((Array.isArray(data) ? data : (data.knowledge_bases ?? [])).map((kb: any) => kb.name)))
       .catch(() => {});
   }, []);
 
   const {
-    step, theme, selectedKb, webSearchEnabled, difficulty, referenceStructure,
-    taskContent, taskSections, currentSection, sessionId, logs, error,
-    agentLogs, generatedFiles, verifyPassed, coverageMap,
+    step, theme, selectedKb, webSearchEnabled, difficulty, cliTool, codexApiKey,
+    referenceStructure, taskContent, taskSections, currentSection, sessionId,
+    logs, error, agentLogs, generatedFiles, verifyPassed, coverageMap,
   } = projectState;
 
   // ── File upload ──
@@ -419,8 +420,158 @@ export default function ProjectPage() {
                   })}
                 </div>
               </div>
+
+              {/* CLI 工具选择 */}
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  代码生成工具
+                </label>
+                <div className="flex gap-2">
+                  {(["claude", "codex"] as const).map((tool) => {
+                    const labels = { claude: "Claude CLI", codex: "Codex CLI" };
+                    const hints  = { claude: "OAuth 认证（Claude Pro）", codex: "OpenAI Codex" };
+                    return (
+                      <button
+                        key={tool}
+                        type="button"
+                        onClick={() => setProjectState((p) => ({ ...p, cliTool: tool }))}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+                          cliTool === tool
+                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
+                        }`}
+                      >
+                        <div className="font-medium">{labels[tool]}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{hints[tool]}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Codex API Key 输入（仅 Codex 模式显示） */}
+              {cliTool === "codex" && (
+                <div className="mt-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    OpenAI API Key（可选，留空则使用 login 认证）
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="sk-..."
+                    value={codexApiKey}
+                    onChange={(e) => setProjectState((p) => ({ ...p, codexApiKey: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  />
+                </div>
+              )}
             </div>
           </div>
+
+          {/* 参考文档章节预览与编辑（动态增删） */}
+          {referenceStructure && !isUploading && (
+            <div className="border rounded-xl p-4 bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  章节识别结果
+                </h3>
+                <span className="text-xs text-gray-400">
+                  {Object.keys(referenceStructure.sections || {}).length} 个章节 · 可编辑内容、删除或添加章节
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* 动态遍历：先标准 key（按 SECTION_ORDER 顺序），再自定义 key */}
+                {[
+                  ...SECTION_ORDER.filter((k) => referenceStructure.sections?.[k] !== undefined),
+                  ...Object.keys(referenceStructure.sections || {}).filter((k) => !SECTION_ORDER.includes(k)),
+                ].map((key) => {
+                  const label = SECTION_NAMES[key] ?? referenceStructure.sections?.[key]?.title ?? key;
+                  const sec = referenceStructure.sections?.[key];
+                  const content = sec?.content ?? "";
+                  const isEmpty = !content.trim();
+                  return (
+                    <div key={key} className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5">
+                        {isEmpty
+                          ? <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          : <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                        }
+                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400 flex-1 truncate">
+                          {label}
+                          {isEmpty && <span className="text-amber-400 ml-1">（未识别）</span>}
+                        </span>
+                        <button
+                          type="button"
+                          title="删除此章节"
+                          onClick={() =>
+                            setProjectState((p) => {
+                              const newSections = { ...p.referenceStructure!.sections };
+                              delete newSections[key];
+                              return { ...p, referenceStructure: { ...p.referenceStructure, sections: newSections } };
+                            })
+                          }
+                          className="text-gray-300 hover:text-red-400 transition-colors ml-1"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <textarea
+                        className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs resize-none h-20 focus:ring-1 focus:ring-blue-300 outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                        placeholder={isEmpty ? "未识别到此章节，可手动填写参考内容..." : ""}
+                        value={content}
+                        onChange={(e) =>
+                          setProjectState((p) => ({
+                            ...p,
+                            referenceStructure: {
+                              ...p.referenceStructure,
+                              sections: {
+                                ...p.referenceStructure!.sections,
+                                [key]: { ...(p.referenceStructure!.sections?.[key] ?? {}), content: e.target.value },
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                  );
+                })}
+
+                {/* 添加自定义章节 */}
+                <div className="md:col-span-2 flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    placeholder="新章节名称（如：实验环境搭建）"
+                    value={newSectionTitle}
+                    onChange={(e) => setNewSectionTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newSectionTitle.trim()) e.currentTarget.form?.requestSubmit?.();
+                    }}
+                    className="flex-1 rounded-lg border border-dashed border-gray-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-300 outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  />
+                  <button
+                    type="button"
+                    disabled={!newSectionTitle.trim()}
+                    onClick={() => {
+                      const key = `custom_${Date.now()}`;
+                      setProjectState((p) => ({
+                        ...p,
+                        referenceStructure: {
+                          ...p.referenceStructure,
+                          sections: {
+                            ...p.referenceStructure!.sections,
+                            [key]: { title: newSectionTitle.trim(), content: "" },
+                          },
+                        },
+                      }));
+                      setNewSectionTitle("");
+                    }}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                  >
+                    + 添加章节
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <button
             disabled={!canGenerate}
