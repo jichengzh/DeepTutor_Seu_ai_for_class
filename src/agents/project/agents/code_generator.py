@@ -36,12 +36,21 @@ def _find_claude_bin() -> str:
 
 
 def _find_codex_bin() -> str:
-    """查找 codex CLI 路径：优先 PATH，降级到 nvm 已知路径。"""
+    """查找 codex CLI 路径：优先 PATH，降级到 VSCode 扩展路径。"""
     found = shutil.which("codex")
     if found:
         return found
-    fallback = os.path.expanduser("~/.nvm/versions/node/v18.20.8/bin/codex")
-    return fallback
+    # 搜索 VSCode Server 扩展中的 codex 二进制（版本号可能更新）
+    import glob as _glob
+    candidates = sorted(
+        _glob.glob(os.path.expanduser(
+            "~/.vscode-server/extensions/openai.chatgpt-*/bin/linux-x86_64/codex"
+        )),
+        reverse=True,
+    )
+    if candidates:
+        return candidates[0]
+    return os.path.expanduser("~/.nvm/versions/node/v20.20.1/bin/codex")
 
 
 # ── 模块级 prompt 构建函数（供 CodeGenerator 和 CodexGenerator 共用）─────────
@@ -305,7 +314,7 @@ class CodeGenerator:
             "--output-format", "stream-json",
             "--verbose",
             cwd=cwd,
-            env=os.environ,
+            env=dict(os.environ),  # uvloop requires plain dict, not _Environ
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -538,20 +547,33 @@ class CodexGenerator:
         ws_callback: Callable,
     ) -> None:
         """
-        调用 codex CLI subprocess。
+        调用 codex CLI subprocess（非交互式 exec 子命令）。
         认证：api_key 不为 None 时注入 OPENAI_API_KEY；
-              否则依赖 ~/.codex/ 存储的 OAuth token（codex login）。
-        Codex 不支持 stream-json，逐行将 stdout 作为 agent_log 推送。
+              否则尝试 ~/.codex/auth.json；
+              最终依赖环境变量或 codex login OAuth token。
+        使用 --json 获取 JSONL 事件流。
         """
         env = dict(os.environ)
         if self._api_key:
             env["OPENAI_API_KEY"] = self._api_key
+        elif not env.get("OPENAI_API_KEY"):
+            auth_file = Path.home() / ".codex" / "auth.json"
+            if auth_file.exists():
+                try:
+                    auth_data = json.loads(auth_file.read_text())
+                    key = auth_data.get("OPENAI_API_KEY") or auth_data.get("api_key")
+                    if key:
+                        env["OPENAI_API_KEY"] = key
+                except Exception:
+                    pass
 
         process = await asyncio.create_subprocess_exec(
             self.CODEX_BIN,
-            "-q", prompt,
-            "-a", "never",           # 自动执行，不请求审批
-            "-s", "workspace-write", # 允许写入工作目录
+            "exec",              # 非交互式子命令
+            "--json",            # JSONL 事件流输出
+            "--color", "never",  # 禁用 ANSI 颜色转义码
+            "-s", "workspace-write",  # 允许写入工作目录
+            prompt,
             cwd=cwd,
             env=env,
             stdout=asyncio.subprocess.PIPE,
@@ -561,7 +583,13 @@ class CodexGenerator:
         assert process.stdout is not None
         async for raw_line in process.stdout:
             line = raw_line.decode(errors="replace").strip()
-            if line:
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+                await self._handle_codex_event(event, ws_callback)
+            except json.JSONDecodeError:
+                # 纯文本输出（进度信息、警告等）
                 await ws_callback({
                     "type": "agent_log",
                     "log_type": "text",
@@ -581,3 +609,33 @@ class CodexGenerator:
             assert process.stderr is not None
             stderr = (await process.stderr.read()).decode(errors="replace")[:200]
             logger.warning(f"codex CLI 退出码 1（非致命）: {stderr}")
+
+    async def _handle_codex_event(self, event: dict, ws_callback: Callable) -> None:
+        """将 Codex JSONL 事件转换为前端 agent_log 格式。"""
+        event_type = event.get("type", "")
+        if event_type == "message":
+            content = str(event.get("content", ""))[:500]
+            await ws_callback({
+                "type": "agent_log", "log_type": "message",
+                "tool": None, "path": "", "content": content,
+            })
+        elif event_type in ("exec", "shell"):
+            cmd = event.get("command") or event.get("cmd") or str(event)[:200]
+            await ws_callback({
+                "type": "agent_log", "log_type": "tool_use",
+                "tool": "Bash", "path": "", "content": f"$ {cmd}",
+            })
+        elif event_type == "patch":
+            for f in event.get("files", []):
+                path = f.get("path", "") if isinstance(f, dict) else str(f)
+                await ws_callback({
+                    "type": "agent_log", "log_type": "tool_use",
+                    "tool": "Write", "path": path, "content": f"Write: {path}",
+                })
+                if path:
+                    await ws_callback({"type": "file_created", "path": path})
+        else:
+            await ws_callback({
+                "type": "agent_log", "log_type": "text",
+                "tool": None, "path": "", "content": str(event)[:300],
+            })

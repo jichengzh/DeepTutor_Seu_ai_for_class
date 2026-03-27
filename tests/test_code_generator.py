@@ -8,6 +8,8 @@ Unit tests for Phase 3 backend:
 
 import asyncio
 import json
+import os
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,7 +21,7 @@ from src.agents.project.agents.requirement_extractor import (
     TaskModule,
 )
 from src.agents.project.agents.code_verifier import CodeVerifier
-from src.agents.project.agents.code_generator import CodeGenerator
+from src.agents.project.agents.code_generator import CodeGenerator, CodexGenerator, _find_codex_bin
 
 
 # ── RequirementExtractor ──────────────────────────────────────────────────────
@@ -234,3 +236,92 @@ class TestCodeGeneratorUnit:
         names = [n["name"] for n in tree]
         assert ".git" not in names
         assert "main.py" in names
+
+
+# ── CodexGenerator (unit-level) ───────────────────────────────────────────────
+
+
+class TestCodexGeneratorUnit:
+    def test_find_codex_bin_finds_vscode_extension(self):
+        """实际环境中能找到 VSCode 扩展中的 codex 二进制"""
+        bin_path = _find_codex_bin()
+        assert os.path.isfile(bin_path), f"codex 未找到: {bin_path}"
+
+    def test_missing_codex_bin_raises(self, monkeypatch):
+        """codex 二进制不存在 → 构造函数抛 EnvironmentError"""
+        monkeypatch.setattr(CodexGenerator, "CODEX_BIN", "/nonexistent/codex")
+        with pytest.raises(EnvironmentError, match="codex CLI"):
+            CodexGenerator()
+
+    def test_constructor_succeeds_when_bin_exists(self, monkeypatch, tmp_path):
+        """codex CLI 存在 → 构造函数不抛异常"""
+        fake_bin = tmp_path / "codex"
+        fake_bin.touch()
+        monkeypatch.setattr(CodexGenerator, "CODEX_BIN", str(fake_bin))
+        gen = CodexGenerator()
+        assert gen is not None
+
+    @pytest.mark.asyncio
+    async def test_run_agent_uses_exec_subcommand(self, monkeypatch, tmp_path):
+        """_run_agent 必须使用 exec 子命令，不使用旧的 -q/-a 标志"""
+        fake_bin = tmp_path / "codex"
+        fake_bin.touch()
+        monkeypatch.setattr(CodexGenerator, "CODEX_BIN", str(fake_bin))
+        gen = CodexGenerator()
+
+        captured: dict = {}
+
+        async def fake_exec(*args, **kwargs):
+            captured["args"] = list(args)
+
+            async def _empty_aiter():
+                return
+                yield  # make it an async generator
+
+            mock_proc = MagicMock()
+            mock_proc.stdout = _empty_aiter()
+            mock_proc.returncode = 0
+            mock_proc.wait = AsyncMock()
+            mock_proc.stderr.read = AsyncMock(return_value=b"")
+            return mock_proc
+
+        with patch("asyncio.create_subprocess_exec", fake_exec):
+            await gen._run_agent("test prompt", str(tmp_path), AsyncMock())
+
+        assert "exec" in captured["args"]
+        assert "--json" in captured["args"]
+        assert "-s" in captured["args"]
+        assert "workspace-write" in captured["args"]
+        assert "-q" not in captured["args"]
+        assert "-a" not in captured["args"]
+
+    @pytest.mark.asyncio
+    async def test_handle_codex_event_message(self, monkeypatch, tmp_path):
+        """message 类型事件 → agent_log message"""
+        fake_bin = tmp_path / "codex"
+        fake_bin.touch()
+        monkeypatch.setattr(CodexGenerator, "CODEX_BIN", str(fake_bin))
+        gen = CodexGenerator()
+
+        logs: list = []
+        async def cb(msg): logs.append(msg)
+
+        await gen._handle_codex_event({"type": "message", "content": "Hello"}, cb)
+        assert any(l.get("log_type") == "message" for l in logs)
+
+    @pytest.mark.asyncio
+    async def test_handle_codex_event_patch_emits_file_created(self, monkeypatch, tmp_path):
+        """patch 类型事件 → file_created 回调"""
+        fake_bin = tmp_path / "codex"
+        fake_bin.touch()
+        monkeypatch.setattr(CodexGenerator, "CODEX_BIN", str(fake_bin))
+        gen = CodexGenerator()
+
+        logs: list = []
+        async def cb(msg): logs.append(msg)
+
+        await gen._handle_codex_event(
+            {"type": "patch", "files": [{"path": "main.py"}]}, cb
+        )
+        types = [l.get("type") for l in logs]
+        assert "file_created" in types
