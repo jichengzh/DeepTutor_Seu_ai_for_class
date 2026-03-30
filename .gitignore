@@ -44,6 +44,7 @@ MANIFEST
 .env
 *.env
 !.env.example
+web/.env.local
 env/
 venv/
 ENV/
@@ -69,6 +70,8 @@ dist/
 web/dist/
 build/
 web/build/
+web/playwright-report/
+web/test-results/
 
 # TypeScript build info
 *.tsbuildinfo
@@ -196,6 +199,9 @@ htmlcov/
 nosetests.xml
 coverage.xml
 develop/
+
+# Local study materials
+book/
 
 # ============================================
 # Jupyter Notebook
