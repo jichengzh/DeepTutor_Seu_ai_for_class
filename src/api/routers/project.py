@@ -130,14 +130,25 @@ async def delete_session(session_id: str):
 
 
 @router.get("/project/{session_id}/download-task")
-async def download_task(session_id: str, format: str = "md"):
-    """下载生成的任务书（md 或 docx 格式）。"""
+async def download_task(session_id: str, format: str = "docx"):
+    """下载生成的任务书或课程大纲（md、docx 或 pdf 格式）。"""
     mgr = get_project_session_manager()
     session = mgr.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
-    if format == "docx":
+    if format == "pdf":
+        # 课程大纲模式下优先下载 PDF
+        file_path = session.get("task_pdf_path")
+        if not file_path or not Path(file_path).exists():
+            # PDF 不存在时返回 .docx（用户可手动转换）
+            file_path = session.get("task_docx_path")
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            filename = "generated_task.docx"
+        else:
+            media_type = "application/pdf"
+            filename = "generated_task.pdf"
+    elif format == "docx":
         file_path = session.get("task_docx_path")
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         filename = "generated_task.docx"
@@ -202,11 +213,11 @@ async def download_repo(session_id: str):
 @router.websocket("/project/generate-task")
 async def websocket_generate_task(websocket: WebSocket):
     """
-    流式生成新任务书。
+    流式生成新任务书或课程大纲。
 
     Client → Server:
         {"theme": "...", "reference_structure": {...},
-         "kb_name": "...", "web_search": true, "session_id": null}
+         "kb_name": "...", "web_search": true, "session_id": null, "mode": "task"|"syllabus"}
 
     Server → Client (stream):
         {"type": "status"|"log"|"chunk"|"section"|"token_stats"|"complete"|"error", ...}
@@ -232,6 +243,7 @@ async def websocket_generate_task(websocket: WebSocket):
         kb_name = data.get("kb_name") or None
         web_search = bool(data.get("web_search", False))
         session_id = data.get("session_id") or None
+        mode = data.get("mode", "task")  # 新增：mode 参数，默认为 task
 
         if not theme:
             await websocket.send_json({"type": "error", "content": "主题 (theme) 不能为空"})
@@ -244,19 +256,21 @@ async def websocket_generate_task(websocket: WebSocket):
                 theme=theme,
                 kb_name=kb_name,
                 reference_structure=reference_structure,
+                mode=mode,  # 保存 mode 到会话
             )
         mgr.update_session(session_id, status="task_generating")
 
         # Output directory for this session
         output_dir = _get_project_output_dir(session_id)
 
-        # Coordinator
+        # Coordinator（传递 mode）
         language = get_ui_language()
         coordinator = ProjectCoordinator(
             output_dir=str(output_dir),
             language=language,
             kb_name=kb_name,
             web_search_enabled=web_search,
+            mode=mode,  # 传递 mode
         )
 
         async def ws_callback(msg: dict):
@@ -279,6 +293,7 @@ async def websocket_generate_task(websocket: WebSocket):
             status="task_generated",
             task_md_path=result["md_path"],
             task_docx_path=result.get("docx_path"),
+            task_pdf_path=result.get("pdf_path"),  # 新增：保存 PDF 路径
         )
 
         # Signal pusher to stop

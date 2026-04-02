@@ -1,37 +1,61 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
-  FolderGit2,
   Upload,
+  FileText,
+  FileDown,
+  CheckCircle2,
   Loader2,
+  Play,
+  RefreshCw,
+  X,
+  Settings,
+  Database,
+  Globe,
+  BookOpen,
+  Terminal,
+  Package,
   CheckCircle,
   Circle,
-  RefreshCw,
+  FileCode,
   Download,
-  FileText,
-  ChevronRight,
-  AlertCircle,
-  X,
-  Folder,
-  File as FileIcon,
-  Terminal,
-  Wrench,
-  MessageSquare,
+  ArrowRight,
+  Zap,
 } from "lucide-react";
-import { useGlobal } from "@/context/GlobalContext";
-import { useTranslation } from "react-i18next";
-import { apiUrl } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { useGlobal } from "@/context/GlobalContext";
+import { apiUrl, wsUrl } from "@/lib/api";
+import { useTranslation } from "react-i18next";
 
-// ─── Section names ───────────────────────────────────────────────────────────
+// Step names for progress display
+const STEPS = [
+  "config",
+  "task_generating",
+  "task_review",
+  "code_generating",
+  "complete",
+] as const;
 
-const SECTION_NAMES: Record<string, string> = {
+// Step labels
+const STEP_LABELS = {
+  config: "配置",
+  task_generating: "生成中",
+  task_review: "审阅",
+  code_generating: "代码生成",
+  complete: "完成",
+};
+
+// Section names for task generation mode
+const TASK_SECTION_NAMES = {
   cover: "封面信息",
-  objectives: "背景与目标",
+  objectives: "课程背景与目标",
   modules: "模块概述",
-  details: "设计内容",
+  details: "各模块设计内容",
   requirements: "作业要求",
   deliverables: "提交成果",
   grading: "成绩考核",
@@ -39,163 +63,206 @@ const SECTION_NAMES: Record<string, string> = {
   references: "参考资源",
 };
 
-const SECTION_ORDER = Object.keys(SECTION_NAMES);
+// Section names for syllabus generation mode
+const SYLLABUS_SECTION_NAMES = {
+  cover: "封面信息",
+  objectives: "课程简介与教学目标",
+  prerequisites: "前置知识要求",
+  content_structure: "课程内容及学时分配",
+  teaching_methods: "教学方法与手段",
+  grading_scheme: "课程考核与成绩评定",
+  teaching_materials: "教材与参考资料",
+  schedule: "教学进度安排",
+};
 
-// ─── Step indicator ───────────────────────────────────────────────────────────
-
-const STEPS = [
-  { key: "config", label: "配置" },
-  { key: "task_generating", label: "生成中" },
-  { key: "task_review", label: "审阅" },
-  { key: "code_generating", label: "代码" },
-];
-
-function StepIndicator({ current }: { current: string }) {
-  const stepIndex = STEPS.findIndex((s) => s.key === current);
-  const displayIndex = current === "complete" ? 3 : stepIndex;
-
-  return (
-    <div className="flex items-center gap-2 mb-6">
-      {STEPS.map((step, i) => (
-        <div key={step.key} className="flex items-center gap-2">
-          <div
-            className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold border-2 transition-colors ${
-              i < displayIndex
-                ? "bg-green-500 border-green-500 text-white"
-                : i === displayIndex
-                  ? "bg-blue-500 border-blue-500 text-white"
-                  : "border-gray-300 text-gray-400"
-            }`}
-          >
-            {i < displayIndex ? <CheckCircle className="w-4 h-4" /> : i + 1}
-          </div>
-          <span
-            className={`text-sm font-medium ${
-              i === displayIndex ? "text-blue-600" : i < displayIndex ? "text-green-600" : "text-gray-400"
-            }`}
-          >
-            {step.label}
-          </span>
-          {i < STEPS.length - 1 && (
-            <ChevronRight className="w-4 h-4 text-gray-300 mx-1" />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Chapter progress (Step 2 left panel) ────────────────────────────────────
-
-function ChapterProgress({
-  sections,
-  currentSection,
+// Upload zone component
+function UploadZone({
+  onFileSelect,
+  accept = ".docx,.pdf",
+  label = "拖拽或点击上传",
+  file,
+  onRemove,
 }: {
-  sections: Record<string, string>;
-  currentSection: string | null;
+  onFileSelect: (file: File) => void;
+  accept?: string;
+  label?: string;
+  file?: File | null;
+  onRemove?: () => void;
 }) {
-  return (
-    <ul className="space-y-2">
-      {SECTION_ORDER.map((key) => {
-        const done = !!sections[key];
-        const active = key === currentSection && !done;
-        return (
-          <li key={key} className="flex items-center gap-2">
-            {done ? (
-              <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
-            ) : active ? (
-              <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
-            ) : (
-              <Circle className="w-4 h-4 text-gray-300 shrink-0" />
-            )}
-            <span
-              className={`text-sm ${
-                done ? "text-green-600" : active ? "text-blue-600 font-medium" : "text-gray-400"
-              }`}
-            >
-              {SECTION_NAMES[key]}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
+  const [isDragging, setIsDragging] = useState(false);
 
-// ─── Log drawer (slide-in from right) ────────────────────────────────────────
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile) onFileSelect(droppedFile);
+  };
 
-function LogDrawer({
-  logs,
-  open,
-  onClose,
-}: {
-  logs: Array<{ type: string; content: string; timestamp?: number }>;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open) endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs, open]);
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => setIsDragging(false);
 
   return (
     <div
-      className={`fixed right-0 top-0 h-full w-80 bg-white dark:bg-gray-900 shadow-2xl border-l z-50 flex flex-col transition-transform duration-300 ${
-        open ? "translate-x-0" : "translate-x-full"
-      }`}
+      className={`relative border-2 border-dashed rounded-xl p-8 transition-all ${
+        isDragging
+          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+          : "border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500"
+      } ${file ? "border-green-500 bg-green-50 dark:bg-green-900/20" : ""}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
     >
-      <div className="flex items-center justify-between p-4 border-b">
-        <span className="font-semibold text-sm">运行日志</span>
-        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-3 text-xs font-mono space-y-1">
-        {logs.map((log, i) => (
+      <input
+        type="file"
+        accept={accept}
+        onChange={(e) => {
+          const selectedFile = e.target.files?.[0];
+          if (selectedFile) onFileSelect(selectedFile);
+        }}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+      />
+      {file ? (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center">
+              <FileText className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate max-w-xs">
+                {file.name}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {(file.size / 1024).toFixed(1)} KB
+              </p>
+            </div>
+          </div>
+          {onRemove && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+              className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-3">
           <div
-            key={i}
-            className={`py-0.5 ${
-              log.type === "error" ? "text-red-500" : "text-gray-600 dark:text-gray-400"
+            className={`w-16 h-16 rounded-full flex items-center justify-center ${
+              isDragging
+                ? "bg-blue-100 dark:bg-blue-900/50"
+                : "bg-slate-100 dark:bg-slate-800"
             }`}
           >
-            {log.content}
+            <Upload
+              className={`w-8 h-8 ${
+                isDragging
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-slate-400 dark:text-slate-500"
+              }`}
+            />
           </div>
-        ))}
-        <div ref={endRef} />
-      </div>
+          <div className="text-center">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+              {label}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              支持 {accept} 格式
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── File tree ────────────────────────────────────────────────────────────────
-
-interface FileTreeNode {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  children?: FileTreeNode[];
-}
-
-function FileTree({ nodes, depth = 0 }: { nodes: FileTreeNode[]; depth?: number }) {
-  if (!nodes || nodes.length === 0) return null;
+// Step indicator component
+function StepIndicator({
+  currentStep,
+  steps,
+}: {
+  currentStep: string;
+  steps: readonly string[];
+}) {
   return (
-    <ul className={depth > 0 ? "pl-4" : ""}>
-      {nodes.map((node) => (
-        <li key={node.path}>
-          <div className="flex items-center gap-1 py-0.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded px-1">
-            {node.type === "directory"
-              ? <Folder className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              : <FileIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
-            <span>{node.name}</span>
+    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-4 py-2 rounded-lg">
+      {steps.map((step, idx) => (
+        <React.Fragment key={step}>
+          <div
+            className={`flex items-center gap-2 text-xs font-medium ${
+              step === currentStep
+                ? "text-blue-600 dark:text-blue-400"
+                : steps.indexOf(currentStep) > idx
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-slate-400 dark:text-slate-500"
+            }`}
+          >
+            {steps.indexOf(currentStep) > idx ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : step === currentStep ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Circle className="w-4 h-4" />
+            )}
+            {STEP_LABELS[step as keyof typeof STEP_LABELS]}
           </div>
-          {node.children && <FileTree nodes={node.children} depth={depth + 1} />}
-        </li>
+          {idx < steps.length - 1 && (
+            <div
+              className={`w-8 h-px ${
+                steps.indexOf(currentStep) > idx
+                  ? "bg-green-400 dark:bg-green-600"
+                  : "bg-slate-300 dark:bg-slate-600"
+              }`}
+            />
+          )}
+        </React.Fragment>
       ))}
-    </ul>
+    </div>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// File tree component for code generation
+function FileTreeNode({
+  node,
+  depth = 0,
+}: {
+  node: any;
+  depth?: number;
+}) {
+  const [expanded, setExpanded] = useState(depth < 1);
+
+  return (
+    <div>
+      <div
+        className={`flex items-center gap-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer pl-${depth * 4}`}
+        onClick={() => node.type === "directory" && setExpanded(!expanded)}
+      >
+        {node.type === "directory" ? (
+          <Package className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+        ) : (
+          <FileCode className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+        )}
+        <span className="text-xs text-slate-700 dark:text-slate-300 truncate">
+          {node.name}
+        </span>
+      </div>
+      {node.type === "directory" && expanded && node.children && (
+        <div>
+          {node.children.map((child: any, idx: number) => (
+            <FileTreeNode key={idx} node={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ProjectPage() {
   const {
@@ -209,551 +276,605 @@ export default function ProjectPage() {
   const { t } = useTranslation();
 
   const [kbs, setKbs] = useState<string[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [showLogs, setShowLogs] = useState(false);
-  const [newSectionTitle, setNewSectionTitle] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [historySessions, setHistorySessions] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const logContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch knowledge base list
+  // Fetch knowledge bases on mount
   useEffect(() => {
     fetch(apiUrl("/api/v1/knowledge/list"))
       .then((r) => r.json())
-      .then((data) => setKbs((Array.isArray(data) ? data : (data.knowledge_bases ?? [])).map((kb: any) => kb.name)))
-      .catch(() => {});
+      .then((data) => {
+        const names = data.map((kb: any) => kb.name);
+        setKbs(names);
+        if (!projectState.selectedKb && names.length > 0) {
+          setProjectState((prev) => ({ ...prev, selectedKb: names[0] }));
+        }
+      })
+      .catch((err) => console.error("Failed to fetch KBs:", err));
   }, []);
 
-  const {
-    step, theme, selectedKb, webSearchEnabled, difficulty, cliTool, codexApiKey,
-    referenceStructure, taskContent, taskSections, currentSection, sessionId,
-    logs, error, agentLogs, generatedFiles, verifyPassed, coverageMap,
-  } = projectState;
+  // Fetch history sessions
+  useEffect(() => {
+    fetch(apiUrl("/api/v1/project/sessions?limit=20"))
+      .then((r) => r.json())
+      .then((data) => {
+        setHistorySessions(data.sessions || []);
+      })
+      .catch((err) => console.error("Failed to fetch sessions:", err));
+  }, []);
 
-  // ── File upload ──
-  const handleFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  // Auto-scroll logs
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [projectState.logs]);
 
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      if (!["docx", "pdf"].includes(ext || "")) {
-        setUploadError("仅支持 .docx 和 .pdf 格式");
-        return;
-      }
-      if (file.size === 0) {
-        setUploadError("文件不能为空");
-        return;
-      }
-
-      setUploadError(null);
-      setIsUploading(true);
-      try {
-        await uploadReference(file);
-      } catch (err: any) {
-        setUploadError(err.message || "上传失败");
-      } finally {
-        setIsUploading(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-      }
-    },
-    [uploadReference],
-  );
-
-  const canGenerate =
-    theme.trim().length > 0 && referenceStructure !== null && !isUploading;
-
-  // ── Download helper ──
-  const downloadTask = (format: "md" | "docx") => {
-    if (!sessionId) return;
-    const url = apiUrl(`/api/v1/project/${sessionId}/download-task?format=${format}`);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = format === "md" ? "generated_task.md" : "generated_task.docx";
-    a.click();
+  const handleFileUpload = async (file: File) => {
+    try {
+      setProjectState((prev) => ({ ...prev, uploadedFile: file }));
+      await uploadReference(file);
+    } catch (err: any) {
+      console.error("Upload failed:", err);
+      setProjectState((prev) => ({
+        ...prev,
+        error: err.message || "上传失败",
+      }));
+    }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
+  const handleLoadHistory = (session: any) => {
+    setProjectState((prev) => ({
+      ...prev,
+      sessionId: session.session_id,
+      theme: session.theme,
+      step: "task_review",
+      mode: session.mode || "task",
+      taskMdPath: session.task_md_path,
+      taskDocxPath: session.task_docx_path,
+      repoPath: session.repo_path,
+      status: session.status,
+    }));
+    setShowHistory(false);
+
+    // Load task content if available
+    if (session.task_md_path) {
+      fetch(`${apiUrl}/api/v1/project/${session.session_id}/download-task?format=md`)
+        .then((r) => r.text())
+        .then((content) => {
+          setProjectState((prev) => ({ ...prev, taskContent: content }));
+        })
+        .catch((err) => console.error("Failed to load content:", err));
+    }
+  };
+
+  const step = projectState.step;
+  const sectionNames =
+    projectState.mode === "syllabus"
+      ? SYLLABUS_SECTION_NAMES
+      : TASK_SECTION_NAMES;
+
   return (
-    <div className="flex flex-col h-full p-6 max-w-5xl mx-auto">
+    <div className="h-screen flex flex-col bg-white dark:bg-slate-900">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <FolderGit2 className="w-6 h-6 text-blue-500" />
-          <h1 className="text-xl font-semibold">Project Creator</h1>
+      <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <FileText className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              {projectState.mode === "syllabus"
+                ? "课程大纲生成"
+                : "任务书生成"}
+            </h1>
+          </div>
+          <StepIndicator currentStep={step} steps={STEPS} />
         </div>
-        <div className="flex gap-2">
-          {logs.length > 0 && (
-            <button
-              onClick={() => setShowLogs(true)}
-              className="text-xs px-3 py-1.5 rounded border hover:bg-gray-50 text-gray-600"
-            >
-              日志 ({logs.length})
-            </button>
-          )}
-          {step !== "config" && (
-            <button
-              onClick={resetProject}
-              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded border hover:bg-gray-50 text-gray-600"
-            >
-              <RefreshCw className="w-3 h-3" /> 重置
-            </button>
-          )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            title="历史会话"
+          >
+            <BookOpen className="w-5 h-5" />
+          </button>
+          <button
+            onClick={resetProject}
+            className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            title="新建会话"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
-      {/* Step indicator */}
-      <StepIndicator current={step} />
-
-      {/* Error banner */}
-      {error && (
-        <div className="flex items-center gap-2 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          {error}
-          <button
-            className="ml-auto"
-            onClick={() => setProjectState((p) => ({ ...p, error: null }))}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* ── Step 1: Config ── */}
-      {step === "config" && (
-        <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Upload card */}
-            <div className="border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-3 hover:border-blue-400 transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className="w-8 h-8 text-gray-400" />
-              <div className="text-center">
-                <p className="font-medium text-sm">上传参考任务书</p>
-                <p className="text-xs text-gray-400 mt-1">支持 .docx / .pdf</p>
-              </div>
-              {isUploading && <Loader2 className="w-5 h-5 animate-spin text-blue-500" />}
-              {referenceStructure && !isUploading && (
-                <div className="flex items-center gap-1 text-green-600 text-xs">
-                  <CheckCircle className="w-4 h-4" />
-                  已解析 {Object.keys(referenceStructure.sections || {}).length} 个章节
-                </div>
-              )}
-              {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".docx,.pdf"
-                className="hidden"
-                onChange={handleFileChange}
-              />
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* History Sidebar */}
+        {showHistory && (
+          <div className="w-80 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                历史会话
+              </h3>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-
-            {/* Theme input */}
-            <div className="flex flex-col gap-3">
-              <label className="text-sm font-medium">新任务书主题</label>
-              <textarea
-                className="border rounded-lg p-3 text-sm resize-none h-24 focus:ring-2 focus:ring-blue-300 outline-none"
-                placeholder="例如：ROS 机器人导航暑期实习"
-                value={theme}
-                onChange={(e) =>
-                  setProjectState((p) => ({ ...p, theme: e.target.value }))
-                }
-              />
-              {/* KB selector */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 shrink-0">知识库：</label>
-                <select
-                  className="flex-1 border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-300 outline-none"
-                  value={selectedKb}
-                  onChange={(e) =>
-                    setProjectState((p) => ({ ...p, selectedKb: e.target.value }))
-                  }
-                >
-                  <option value="">不使用知识库</option>
-                  {kbs.map((kb) => (
-                    <option key={kb} value={kb}>{kb}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Web search toggle */}
-              <label className="flex items-center gap-2 cursor-pointer select-none">
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {historySessions.map((session, idx) => (
                 <div
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
-                    webSearchEnabled ? "bg-blue-500" : "bg-gray-300"
-                  }`}
-                  onClick={() =>
-                    setProjectState((p) => ({ ...p, webSearchEnabled: !p.webSearchEnabled }))
-                  }
+                  key={idx}
+                  onClick={() => handleLoadHistory(session)}
+                  className="w-full cursor-pointer text-left p-3 bg-white dark:bg-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors border border-slate-200 dark:border-slate-600"
                 >
-                  <div
-                    className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                      webSearchEnabled ? "translate-x-5" : "translate-x-0.5"
-                    }`}
-                  />
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate mb-1">
+                    {session.theme}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {session.mode === "syllabus" ? "课程大纲" : "任务书"} •{" "}
+                    {STEP_LABELS[session.status as keyof typeof STEP_LABELS] ||
+                      session.status}
+                  </p>
                 </div>
-                <span className="text-sm text-gray-600">开启网络搜索</span>
-              </label>
-              {/* Difficulty selector */}
-              <div className="mt-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  代码难度
-                </label>
-                <div className="flex gap-2">
-                  {(["low", "medium", "high"] as const).map((level) => {
-                    const labels = { low: "低难度", medium: "中等", high: "高难度" };
-                    const hints = { low: "≤10文件 / ≤3000行", medium: "≤25文件 / ≤7000行", high: "≤40文件 / ≤10000行" };
-                    return (
-                      <button
-                        key={level}
-                        type="button"
-                        onClick={() => setProjectState((p) => ({ ...p, difficulty: level }))}
-                        className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
-                          difficulty === level
-                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        <div className="font-medium">{labels[level]}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{hints[level]}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* CLI 工具选择 */}
-              <div className="mt-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  代码生成工具
-                </label>
-                <div className="flex gap-2">
-                  {(["claude", "codex"] as const).map((tool) => {
-                    const labels = { claude: "Claude CLI", codex: "Codex CLI" };
-                    const hints  = { claude: "OAuth 认证（Claude Pro）", codex: "OpenAI Codex" };
-                    return (
-                      <button
-                        key={tool}
-                        type="button"
-                        onClick={() => setProjectState((p) => ({ ...p, cliTool: tool }))}
-                        className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
-                          cliTool === tool
-                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        <div className="font-medium">{labels[tool]}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{hints[tool]}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Codex API Key 输入（仅 Codex 模式显示） */}
-              {cliTool === "codex" && (
-                <div className="mt-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    OpenAI API Key（可选，留空则使用 login 认证）
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="sk-..."
-                    value={codexApiKey}
-                    onChange={(e) => setProjectState((p) => ({ ...p, codexApiKey: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-                  />
-                </div>
+              ))}
+              {historySessions.length === 0 && (
+                <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">
+                  暂无历史会话
+                </p>
               )}
             </div>
           </div>
+        )}
 
-          {/* 参考文档章节预览与编辑（动态增删） */}
-          {referenceStructure && !isUploading && (
-            <div className="border rounded-xl p-4 bg-gray-50 dark:bg-gray-800/50">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  章节识别结果
-                </h3>
-                <span className="text-xs text-gray-400">
-                  {Object.keys(referenceStructure.sections || {}).length} 个章节 · 可编辑内容、删除或添加章节
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* 动态遍历：先标准 key（按 SECTION_ORDER 顺序），再自定义 key */}
-                {[
-                  ...SECTION_ORDER.filter((k) => referenceStructure.sections?.[k] !== undefined),
-                  ...Object.keys(referenceStructure.sections || {}).filter((k) => !SECTION_ORDER.includes(k)),
-                ].map((key) => {
-                  const label = SECTION_NAMES[key] ?? referenceStructure.sections?.[key]?.title ?? key;
-                  const sec = referenceStructure.sections?.[key];
-                  const content = sec?.content ?? "";
-                  const isEmpty = !content.trim();
-                  return (
-                    <div key={key} className="flex flex-col gap-1">
-                      <div className="flex items-center gap-1.5">
-                        {isEmpty
-                          ? <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          : <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                        }
-                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400 flex-1 truncate">
-                          {label}
-                          {isEmpty && <span className="text-amber-400 ml-1">（未识别）</span>}
-                        </span>
-                        <button
-                          type="button"
-                          title="删除此章节"
-                          onClick={() =>
-                            setProjectState((p) => {
-                              const newSections = { ...p.referenceStructure!.sections };
-                              delete newSections[key];
-                              return { ...p, referenceStructure: { ...p.referenceStructure, sections: newSections } };
-                            })
-                          }
-                          className="text-gray-300 hover:text-red-400 transition-colors ml-1"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <textarea
-                        className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs resize-none h-20 focus:ring-1 focus:ring-blue-300 outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-                        placeholder={isEmpty ? "未识别到此章节，可手动填写参考内容..." : ""}
-                        value={content}
-                        onChange={(e) =>
-                          setProjectState((p) => ({
-                            ...p,
-                            referenceStructure: {
-                              ...p.referenceStructure,
-                              sections: {
-                                ...p.referenceStructure!.sections,
-                                [key]: { ...(p.referenceStructure!.sections?.[key] ?? {}), content: e.target.value },
-                              },
-                            },
-                          }))
-                        }
-                      />
+        {/* Main Panel */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Step 1: Configuration */}
+          {step === "config" && (
+            <div className="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto space-y-6">
+              {/* Mode Selection */}
+              <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl">
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">
+                  选择生成模式
+                </h2>
+                <div className="flex gap-4">
+                  <label className="flex-1 flex items-center gap-3 p-4 bg-white dark:bg-slate-700 rounded-lg border-2 border-slate-200 dark:border-slate-600 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-all">
+                    <input
+                      type="radio"
+                      name="mode"
+                      value="task"
+                      checked={projectState.mode === "task"}
+                      onChange={(e) =>
+                        setProjectState((prev) => ({
+                          ...prev,
+                          mode: "task" as const,
+                        }))
+                      }
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-slate-100">
+                        任务书生成
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        生成实习/课程任务书文档
+                      </p>
                     </div>
-                  );
-                })}
+                  </label>
+                  <label className="flex-1 flex items-center gap-3 p-4 bg-white dark:bg-slate-700 rounded-lg border-2 border-slate-200 dark:border-slate-600 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-all">
+                    <input
+                      type="radio"
+                      name="mode"
+                      value="syllabus"
+                      checked={projectState.mode === "syllabus"}
+                      onChange={(e) =>
+                        setProjectState((prev) => ({
+                          ...prev,
+                          mode: "syllabus" as const,
+                        }))
+                      }
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-slate-100">
+                        课程大纲生成
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        生成课程教学大纲 PDF
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
 
-                {/* 添加自定义章节 */}
-                <div className="md:col-span-2 flex gap-2 mt-1">
-                  <input
-                    type="text"
-                    placeholder="新章节名称（如：实验环境搭建）"
-                    value={newSectionTitle}
-                    onChange={(e) => setNewSectionTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newSectionTitle.trim()) e.currentTarget.form?.requestSubmit?.();
-                    }}
-                    className="flex-1 rounded-lg border border-dashed border-gray-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-300 outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-                  />
-                  <button
-                    type="button"
-                    disabled={!newSectionTitle.trim()}
-                    onClick={() => {
-                      const key = `custom_${Date.now()}`;
-                      setProjectState((p) => ({
-                        ...p,
-                        referenceStructure: {
-                          ...p.referenceStructure,
-                          sections: {
-                            ...p.referenceStructure!.sections,
-                            [key]: { title: newSectionTitle.trim(), content: "" },
-                          },
-                        },
-                      }));
-                      setNewSectionTitle("");
-                    }}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
+              {/* Reference Upload */}
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+                  上传参考{" "}
+                  {projectState.mode === "syllabus"
+                    ? "课程大纲"
+                    : "任务书"}
+                </h2>
+                <UploadZone
+                  onFileSelect={handleFileUpload}
+                  file={projectState.uploadedFile}
+                  onRemove={() =>
+                    setProjectState((prev) => ({
+                      ...prev,
+                      uploadedFile: null,
+                      referenceStructure: null,
+                    }))
+                  }
+                  label={
+                    projectState.mode === "syllabus"
+                      ? "拖拽或点击上传课程大纲"
+                      : "拖拽或点击上传任务书"
+                  }
+                />
+              </div>
+
+              {/* Theme Input */}
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+                  {projectState.mode === "syllabus"
+                    ? "新课程主题"
+                    : "新任务书主题"}
+                </h2>
+                <input
+                  type="text"
+                  value={projectState.theme}
+                  onChange={(e) =>
+                    setProjectState((prev) => ({
+                      ...prev,
+                      theme: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    projectState.mode === "syllabus"
+                      ? "例如：机器学习导论"
+                      : "例如：ROS 机器人导航实习"
+                  }
+                  className="w-full px-4 py-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                />
+              </div>
+
+              {/* Knowledge Base Selection */}
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+                  知识库（可选）
+                </h2>
+                <div className="flex items-center gap-2">
+                  <Database className="w-5 h-5 text-slate-400" />
+                  <select
+                    value={projectState.selectedKb}
+                    onChange={(e) =>
+                      setProjectState((prev) => ({
+                        ...prev,
+                        selectedKb: e.target.value,
+                      }))
+                    }
+                    className="flex-1 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-slate-100"
                   >
-                    + 添加章节
-                  </button>
+                    <option value="">不使用知识库</option>
+                    {kbs.map((kb) => (
+                      <option key={kb} value={kb}>
+                        {kb}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Web Search Toggle */}
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+                  启用网络搜索
+                </h2>
+                <label className="flex items-center gap-3 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={projectState.webSearchEnabled}
+                    onChange={(e) =>
+                      setProjectState((prev) => ({
+                        ...prev,
+                        webSearchEnabled: e.target.checked,
+                      }))
+                    }
+                    className="w-5 h-5 text-blue-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-slate-400" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                      使用网络搜索获取最新资料
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Error Display */}
+              {projectState.error && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-800">
+                  {projectState.error}
+                </div>
+              )}
+
+              {/* Start Button */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={startTaskGeneration}
+                  disabled={
+                    !projectState.theme.trim() ||
+                    !projectState.referenceStructure
+                  }
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-all font-medium"
+                >
+                  <Play className="w-5 h-5" />
+                  开始生成
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Task/Syllabus Generating */}
+          {step === "task_generating" && (
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left Panel: Progress */}
+              <div className="w-80 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    生成进度
+                  </h3>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {Object.entries(sectionNames).map(([key, name]) => (
+                    <div
+                      key={key}
+                      className={`flex items-center gap-2 p-2 rounded-lg ${
+                        projectState.taskSections[key]
+                          ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                          : projectState.currentSection === key
+                            ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                            : "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400"
+                      }`}
+                    >
+                      {projectState.taskSections[key] ? (
+                        <CheckCircle2 className="w-4 h-4" />
+                      ) : projectState.currentSection === key ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Circle className="w-4 h-4" />
+                      )}
+                      <span className="text-sm font-medium">{name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Panel: Preview */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-3xl mx-auto">
+                  <div className="prose prose prose-slate dark:prose-invert prose-sm max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                    >
+                      {projectState.taskContent || "*等待生成...*"}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          <button
-            disabled={!canGenerate}
-            onClick={startTaskGeneration}
-            className="self-end flex items-center gap-2 px-6 py-2.5 bg-blue-500 text-white rounded-lg font-medium text-sm hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            开始生成任务书 <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* ── Step 2: Generating ── */}
-      {step === "task_generating" && (
-        <div className="flex gap-6 flex-1 min-h-0">
-          {/* Left: chapter progress */}
-          <div className="w-48 shrink-0">
-            <p className="text-sm font-medium mb-3 text-gray-700">章节进度</p>
-            <ChapterProgress sections={taskSections} currentSection={currentSection} />
-          </div>
-
-          {/* Right: streaming markdown */}
-          <div className="flex-1 overflow-y-auto border rounded-xl p-4 prose prose-sm max-w-none dark:prose-invert">
-            {taskContent ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{taskContent}</ReactMarkdown>
-            ) : (
-              <div className="flex items-center gap-2 text-gray-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> 正在连接...
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Step 3: Review ── */}
-      {step === "task_review" && (
-        <div className="flex flex-col gap-4 flex-1 min-h-0">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-gray-700">任务书预览</p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => downloadTask("md")}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50"
-              >
-                <Download className="w-3.5 h-3.5" /> 下载 .md
-              </button>
-              <button
-                onClick={() => downloadTask("docx")}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50"
-              >
-                <FileText className="w-3.5 h-3.5" /> 下载 .docx
-              </button>
-              <button
-                onClick={startCodeGeneration}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-              >
-                <FolderGit2 className="w-3.5 h-3.5" /> 生成代码仓库
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto border rounded-xl p-5 prose prose-sm max-w-none dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{taskContent}</ReactMarkdown>
-          </div>
-        </div>
-      )}
-
-      {/* ── Step 4: Code generating / complete ── */}
-      {(step === "code_generating" || step === "complete") && (
-        <div className="flex gap-4 flex-1 min-h-0">
-
-          {/* Left 1/3: Agent log */}
-          <div className="w-72 shrink-0 flex flex-col gap-2">
-            <p className="text-sm font-medium text-gray-700">Agent 操作日志</p>
-            <div className="flex-1 overflow-y-auto border rounded-xl p-2 bg-gray-950 text-xs font-mono space-y-0.5">
-              {agentLogs.length === 0 && step === "code_generating" && (
-                <div className="flex items-center gap-2 text-gray-500 p-2">
-                  <Loader2 className="w-3 h-3 animate-spin" /> 等待 Claude Agent...
-                </div>
-              )}
-              {agentLogs.map((log, i) => {
-                const isError = log.type === "error";
-                const isResult = log.type === "tool_result";
-                const Icon =
-                  log.tool === "Bash" ? Terminal :
-                  log.tool === "Write" || log.tool === "Edit" ? Wrench :
-                  log.type === "message" ? MessageSquare :
-                  Terminal;
-                return (
-                  <div key={i} className={`flex items-start gap-1.5 py-0.5 ${isError ? "text-red-400" : isResult ? "text-green-400" : "text-gray-300"}`}>
-                    <span className="text-gray-600 shrink-0 mt-0.5">{log.timestamp}</span>
-                    <Icon className="w-3 h-3 shrink-0 mt-0.5" />
-                    <span className="break-all leading-relaxed">{log.content}</span>
+          {/* Step 3: Task/Syllabus Review */}
+          {step === "task_review" && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Preview Area */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-3xl mx-auto">
+                  <div className="prose prose prose-slate dark:prose-invert max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                    >
+                      {projectState.taskContent}
+                    </ReactMarkdown>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Right 2/3: File tree + coverage + actions */}
-          <div className="flex-1 flex flex-col gap-3 min-h-0">
-
-            {/* Verify status bar */}
-            {step === "complete" && (
-              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-                verifyPassed ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"
-              }`}>
-                {verifyPassed
-                  ? <><CheckCircle className="w-4 h-4" /> 代码验证通过 — 可正常运行</>
-                  : <><AlertCircle className="w-4 h-4" /> 验证未完全通过，请查看日志</>}
-              </div>
-            )}
-
-            {/* File tree */}
-            <div className="flex-1 overflow-y-auto border rounded-xl p-3">
-              {step === "code_generating" && generatedFiles.length === 0 ? (
-                <div className="flex items-center gap-2 text-gray-400 text-sm">
-                  <Loader2 className="w-4 h-4 animate-spin" /> 正在生成文件...
                 </div>
-              ) : (
-                <>
-                  <p className="text-xs font-medium text-gray-500 mb-2">生成文件树</p>
-                  <FileTree nodes={generatedFiles} />
-                </>
-              )}
-            </div>
+              </div>
 
-            {/* Coverage map */}
-            {coverageMap && Object.keys(coverageMap).length > 0 && (
-              <div className="border rounded-xl p-3">
-                <p className="text-xs font-medium text-gray-500 mb-2">需求覆盖率</p>
-                <div className="space-y-1">
-                  {Object.entries(coverageMap).map(([moduleId, files]) => (
-                    <div key={moduleId} className="flex items-start gap-2 text-xs">
-                      <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-medium text-gray-700">{moduleId}</span>
-                        <span className="text-gray-400 ml-1">{files.join(", ")}</span>
-                      </div>
+              {/* Action Bar */}
+              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  {/* Download DOCX */}
+                  <button
+                    onClick={() => {
+                      const url = `${apiUrl}/api/v1/project/${projectState.sessionId}/download-task?format=docx`;
+                      window.open(url, "_blank");
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    下载 Word
+                  </button>
+
+                  {/* Download PDF */}
+                  <button
+                    onClick={() => {
+                      const url = `${apiUrl}/api/v1/project/${projectState.sessionId}/download-task?format=pdf`;
+                      window.open(url, "_blank");
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    下载 PDF
+                  </button>
+                </div>
+
+                {/* Generate Code Button */}
+                <button
+                  onClick={startCodeGeneration}
+                  className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <Zap className="w-4 h-4" />
+                  生成代码仓库
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Code Generating */}
+          {step === "code_generating" && (
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left Panel: Agent Logs */}
+              <div className="w-96 border-r border-slate-200 dark:border-slate-700 bg-slate-900 flex flex-col overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-green-400" />
+                  <h3 className="text-sm font-semibold text-slate-200">
+                    Agent 日志
+                  </h3>
+                </div>
+                <div
+                  ref={logContainerRef}
+                  className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs"
+                >
+                  {projectState.logs.map((log, idx) => (
+                    <div
+                      key={idx}
+                      className={`px-2 py-1 rounded break-words ${
+                        log.type === "error"
+                          ? "bg-red-900/50 text-red-400"
+                          : log.type === "status"
+                            ? "bg-blue-900/50 text-blue-400"
+                            : "text-slate-400"
+                      }`}
+                    >
+                      <span className="text-slate-500">
+                        {log.timestamp}
+                      </span>{" "}
+                      {log.content}
                     </div>
                   ))}
                 </div>
               </div>
-            )}
 
-            {/* Actions */}
-            {step === "complete" && sessionId && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    const a = document.createElement("a");
-                    a.href = apiUrl(`/api/v1/project/${sessionId}/download-repo`);
-                    a.download = "";
-                    a.click();
-                  }}
-                  className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" /> 下载代码 zip
-                </button>
+              {/* Right Panel: File Tree & Progress */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-3xl mx-auto space-y-6">
+                  {/* File Tree */}
+                  {projectState.generatedFiles.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+                        生成的文件
+                      </h3>
+                      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                        {projectState.generatedFiles.map(
+                          (node: any, idx: number) => (
+                            <FileTreeNode key={idx} node={node} />
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Verify Result */}
+                  {projectState.verifyPassed !== null && (
+                    <div
+                      className={`p-4 rounded-lg border ${
+                        projectState.verifyPassed
+                          ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+                          : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {projectState.verifyPassed ? (
+                          <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                        ) : (
+                          <X className="w-5 h-5 text-red-600 dark:text-red-400" />
+                        )}
+                        <span
+                          className={`font-medium ${
+                            projectState.verifyPassed
+                              ? "text-green-700 dark:text-green-400"
+                              : "text-red-700 dark:text-red-400"
+                          }`}
+                        >
+                          {projectState.verifyPassed
+                            ? "验证通过"
+                            : "验证失败"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error Display */}
+                  {projectState.error && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-800">
+                      {projectState.error}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Complete */}
+          {step === "complete" && (
+            <div className="flex-1 overflow-y-auto p-8">
+              <div className="max-w-2xl mx-auto text-center space-y-6">
+                <div className="w-20 h-20 bg-green-100 dark:bg-green-900/50 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-10 h-10 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+                    生成完成！
+                  </h2>
+                  <p className="text-slate-600 dark:text-slate-400">
+                    您的任务书和代码仓库已成功生成
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => {
+                      const url = `${apiUrl}/api/v1/project/${projectState.sessionId}/download-task?format=docx`;
+                      window.open(url, "_blank");
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
+                  >
+                    <FileDown className="w-5 h-5" />
+                    下载任务书
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const url = `${apiUrl}/api/v1/project/${projectState.sessionId}/download-repo`;
+                      window.open(url, "_blank");
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Download className="w-5 h-5" />
+                    下载代码
+                  </button>
+                </div>
+
                 <button
                   onClick={resetProject}
-                  className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg border hover:bg-gray-50 text-gray-600"
+                  className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> 新建项目
+                  <Play className="w-5 h-5" />
+                  创建新项目
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      )}
-
-      {/* Log drawer */}
-      <LogDrawer
-        logs={logs}
-        open={showLogs}
-        onClose={() => setShowLogs(false)}
-      />
-      {showLogs && (
-        <div
-          className="fixed inset-0 bg-black/20 z-40"
-          onClick={() => setShowLogs(false)}
-        />
-      )}
+      </div>
     </div>
   );
 }
