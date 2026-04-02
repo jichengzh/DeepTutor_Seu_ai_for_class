@@ -21,7 +21,7 @@ from src.services.llm import factory as llm_factory
 
 logger = get_logger("TaskGenerator")
 
-# 章节顺序与标题（中文）
+# 章节顺序与标题（中文） - 任务书模式
 SECTION_ORDER_ZH = [
     ("cover",        "封面信息"),
     ("objectives",   "课程背景与目标"),
@@ -46,13 +46,44 @@ SECTION_ORDER_EN = [
     ("references",   "References"),
 ]
 
+# 课程大纲章节顺序（中文）
+SECTION_ORDER_SYLLABUS_ZH = [
+    ("cover",            "封面信息"),
+    ("objectives",       "课程简介与教学目标"),
+    ("prerequisites",     "前臵知识要求"),
+    ("content_structure", "课程内容及学时分配"),
+    ("teaching_methods",  "教学方法与手段"),
+    ("grading_scheme",    "课程考核与成绩评定"),
+    ("teaching_materials", "教材与参考资料"),
+    ("schedule",         "教学进度安排"),
+]
+
+SECTION_ORDER_SYLLABUS_EN = [
+    ("cover",            "Course Information"),
+    ("objectives",       "Course Objectives"),
+    ("prerequisites",     "Prerequisites"),
+    ("content_structure", "Course Content Structure"),
+    ("teaching_methods",  "Teaching Methods"),
+    ("grading_scheme",    "Grading Scheme"),
+    ("teaching_materials", "Teaching Materials"),
+    ("schedule",         "Teaching Schedule"),
+]
+
 _PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 
-def _load_prompts(language: str) -> dict[str, Any]:
+def _load_prompts(language: str, mode: str = "task") -> dict[str, Any]:
+    """
+    Load prompts based on language and mode.
+
+    Args:
+        language: "zh" or "en"
+        mode: "task" (任务书）或 "syllabus" (课程大纲）
+    """
     lang = "zh" if language.startswith("zh") else "en"
-    prompt_file = _PROMPTS_DIR / lang / "task_generation.yaml"
-    with open(prompt_file, encoding="utf-8") as f:
+    prompt_file = "task_generation.yaml" if mode == "task" else "syllabus_generation.yaml"
+    prompt_path = _PROMPTS_DIR / lang / prompt_file
+    with open(prompt_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -65,12 +96,32 @@ class TaskGenerator:
         language: 提示词语言（"zh" 或 "en"）
     """
 
-    def __init__(self, output_dir: str, language: str = "zh"):
+    def __init__(self, output_dir: str, language: str = "zh", mode: str = "task"):
+        """
+        Args:
+            output_dir: 生成文件存储目录
+            language: 提示词语言（"zh" 或 "en"）
+            mode: 生成模式，"task"（任务书）或 "syllabus"（课程大纲）
+        """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.language = language
-        self._prompts = _load_prompts(language)
-        self._section_order = SECTION_ORDER_ZH if language.startswith("zh") else SECTION_ORDER_EN
+        self.mode = mode
+
+        # 根据 mode: 加载不同提示词文件
+        self._prompts = _load_prompts(language, mode)
+
+        # 根据 mode 和 language 确定章节顺序
+        if mode == "syllabus":
+            self._section_order = (
+                SECTION_ORDER_SYLLABUS_ZH if language.startswith("zh")
+                else SECTION_ORDER_SYLLABUS_EN
+            )
+        else:
+            self._section_order = (
+                SECTION_ORDER_ZH if language.startswith("zh")
+                else SECTION_ORDER_EN
+            )
 
     async def generate(
         self,
@@ -171,12 +222,13 @@ class TaskGenerator:
         # Step 4: 组合并导出（按实际生成的章节顺序）
         full_md = self._assemble_markdown(theme, sections, section_order)
         md_path = self._save_markdown(full_md)
-        docx_path = self._export_docx(full_md)
+        docx_path, pdf_path = self._export_docx(full_md)
 
         return {
             "content": full_md,
             "md_path": str(md_path),
             "docx_path": str(docx_path),
+            "pdf_path": str(pdf_path),
         }
 
     # ------------------------------------------------------------------
@@ -231,12 +283,19 @@ class TaskGenerator:
         md_path.write_text(content, encoding="utf-8")
         return md_path
 
-    def _export_docx(self, markdown_content: str) -> Path:
-        """将 Markdown 内容导出为 .docx 文件（使用 python-docx）。"""
+    def _export_docx(self, markdown_content: str) -> tuple[Path, Path]:
+        """
+        将 Markdown 内容导出为 .docx 文件，并转换为 PDF。
+
+        Returns:
+            (docx_path, pdf_path): 两个文件路径
+        """
         docx_path = self.output_dir / "generated_task.docx"
+        pdf_path = self.output_dir / "generated_task.pdf"
+
+        # 生成 .docx
         try:
             from docx import Document
-            from docx.shared import Pt
 
             doc = Document()
             for line in markdown_content.splitlines():
@@ -256,7 +315,85 @@ class TaskGenerator:
             logger.warning(f"docx export failed: {e}. Saving empty placeholder.")
             docx_path.write_bytes(b"")
 
-        return docx_path
+        # 转换为 PDF（在课程大纲模式下）
+        if self.mode == "syllabus":
+            try:
+                self._convert_docx_to_pdf(docx_path, pdf_path)
+            except Exception as e:
+                logger.warning(f"PDF conversion failed: {e}. PDF will not be available.")
+
+        return docx_path, pdf_path
+
+    def _convert_docx_to_pdf(self, docx_path: Path, pdf_path: Path):
+        """
+        将 .docx 转换为为 PDF。
+
+        优先使用 LibreOffice（跨平台），fallback 到 win32com（仅 Windows）。
+        """
+        import subprocess
+        import shutil
+        import platform
+
+        # 方法 1: LibreOffice/Unoconv（跨平台推荐）
+        libreoffice_paths = [
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",  # macOS
+            "/usr/bin/libreoffice",  # Linux
+            "/usr/bin/soffice",  # Linux alternative
+            "soffice",  # 系统路径
+        ]
+        soffice = None
+        for path in libreoffice_paths:
+            if Path(path).exists() or shutil.which(path):
+                soffice = path
+                break
+
+        if soffice:
+            cmd = [
+                soffice,
+                "--headless",
+                "--convert-to", "pdf",
+                "--outdir", str(pdf_path.parent),
+                str(docx_path),
+            ]
+            try:
+                subprocess.run(cmd, check=True, timeout=60, capture_output=True)
+                if pdf_path.exists():
+                    logger.info(f"PDF conversion successful via LibreOffice: {pdf_path}")
+                    return
+            except (subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+                logger.warning(f"LibreOffice conversion failed: {e}")
+
+        # 方法 2: win32com（仅 Windows）
+        if platform.system() == "Windows":
+            try:
+                import win32com.client
+                word = win32com.client.Dispatch("Word.Application")
+                word.Visible = False
+                doc = word.Documents.Open(str(docx_path.absolute()))
+                doc.SaveAs(str(pdf_path.absolute()), FileFormat=17)  # 17 = PDF
+                doc.Close()
+                word.Quit()
+                logger.info(f"PDF conversion successful via win32com: {pdf_path}")
+                return
+            except Exception as e:
+                logger.warning(f"win32com conversion failed: {e}")
+
+        # 方法 3: python-docx2pdf（需要安装）
+        try:
+            from docx2pdf import convert
+            convert(docx_path, str(pdf_path))
+            logger.info(f"PDF conversion successful via docx2pdf: {pdf_path}")
+            return
+        except ImportError:
+            logger.info("docx2pdf not installed. Install with: pip install python-docx2pdf")
+        except Exception as e:
+            logger.warning(f"docx2pdf conversion failed: {e}")
+
+        # 所有方法都失败
+        logger.warning(
+            "PDF conversion failed. Please install LibreOffice, or on Windows ensure Word is available, "
+            "or install python-docx2pdf: pip install python-docx2pdf"
+        )
 
 
 __all__ = ["TaskGenerator", "SECTION_ORDER_ZH", "SECTION_ORDER_EN"]

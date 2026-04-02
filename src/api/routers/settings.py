@@ -23,7 +23,7 @@ SETTINGS_FILE = (
 # Default sidebar navigation order
 DEFAULT_SIDEBAR_NAV_ORDER = {
     "start": ["/", "/history", "/knowledge", "/notebook"],
-    "learnResearch": ["/question", "/solver", "/guide", "/ideagen", "/research", "/co_writer"],
+    "learnResearch": ["/question", "/solver", "/guide", "/ideagen", "/research", "/co_writer", "/project"],
 }
 
 # Default UI settings

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-ProjectCoordinator — 任务书生成的主协调器。
+ProjectCoordinator — 任务书生成和课程大纲生成的主协调器。
 
 负责：
 1. 协调 TaskGenerator 执行生成流程
@@ -21,13 +21,14 @@ logger = get_logger("ProjectCoordinator")
 
 class ProjectCoordinator:
     """
-    协调任务书生成全流程。
+    协调任务书/课程大纲生成全流程。
 
     Args:
         output_dir: 本次会话的输出目录
         language: 提示词语言（"zh" 或 "en"）
         kb_name: 知识库名称（可选）
         web_search_enabled: 是否启用网络搜索
+        mode: 生成模式，"task"（任务书）或 "syllabus"（课程大纲）
     """
 
     def __init__(
@@ -36,11 +37,13 @@ class ProjectCoordinator:
         language: str = "zh",
         kb_name: str | None = None,
         web_search_enabled: bool = False,
+        mode: str = "task",
     ):
         self.output_dir = Path(output_dir)
         self.language = language
         self.kb_name = kb_name
         self.web_search_enabled = web_search_enabled
+        self.mode = mode  # 新增：记录生成模式
         self._ws_callback: Callable | None = None
 
     def set_ws_callback(self, callback: Callable):
@@ -56,14 +59,15 @@ class ProjectCoordinator:
         reference_structure: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        生成任务书文档。
+        生成任务书或课程大纲文档（根据 mode）。
 
         Returns:
-            {"content": str, "md_path": str, "docx_path": str}
+            {"content": str, "md_path": str, "docx_path": str, "pdf_path": str}
         """
         generator = TaskGenerator(
             output_dir=str(self.output_dir),
             language=self.language,
+            mode=self.mode,  # 传递 mode 参数
         )
 
         result = await generator.generate(

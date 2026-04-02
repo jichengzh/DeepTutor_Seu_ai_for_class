@@ -82,6 +82,7 @@ class ProjectSessionManager:
         theme: str,
         kb_name: str | None = None,
         reference_structure: dict[str, Any] | None = None,
+        mode: str = "task",  # 新增：mode 参数
     ) -> str:
         """
         创建新会话，返回 session_id。
@@ -92,10 +93,12 @@ class ProjectSessionManager:
         session: dict[str, Any] = {
             "session_id": session_id,
             "theme": theme[:200],
+            "mode": mode,  # 新增：保存模式
             "kb_name": kb_name or "",
             "status": "init",
             "task_md_path": None,
             "task_docx_path": None,
+            "task_pdf_path": None,  # 新增：PDF 路径
             "repo_path": None,
             "reference_structure": reference_structure or {},
             "token_stats": {
