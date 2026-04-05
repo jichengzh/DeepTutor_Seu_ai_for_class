@@ -44,9 +44,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Star,
+  Network,
 } from "lucide-react";
 import { apiUrl, wsUrl } from "@/lib/api";
 import { useGlobal } from "@/context/GlobalContext";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 interface ProgressInfo {
@@ -92,6 +94,7 @@ interface UploadFile {
 
 export default function KnowledgePage() {
   const { t } = useTranslation();
+  const router = useRouter();
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1313,6 +1316,19 @@ export default function KnowledgePage() {
                                 {kb.statistics.rag_provider}
                               </span>
                             </div>
+                          )}
+                          {/* Knowledge Graph button */}
+                          {kb.statistics.rag_initialized && kb.statistics.content_lists > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/knowledge/graph?kb=${kb.name}`);
+                              }}
+                              className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                            >
+                              <Network className="w-3.5 h-3.5" />
+                              {t("Knowledge Graph")}
+                            </button>
                           )}
                         </div>
                       );
