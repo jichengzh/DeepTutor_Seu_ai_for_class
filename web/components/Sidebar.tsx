@@ -26,6 +26,7 @@ import {
   X,
   FolderGit2,
   LucideIcon,
+  Network,
 } from "lucide-react";
 import { useGlobal } from "@/context/GlobalContext";
 
@@ -44,6 +45,7 @@ const ALL_NAV_ITEMS: Record<string, { icon: LucideIcon; nameKey: string }> = {
   "/": { icon: Home, nameKey: "Home" },
   "/history": { icon: History, nameKey: "History" },
   "/knowledge": { icon: BookOpen, nameKey: "Knowledge Bases" },
+  "/knowledge/graph": { icon: Network, nameKey: "Knowledge Graph" },
   "/notebook": { icon: Book, nameKey: "Notebooks" },
   "/question": { icon: PenTool, nameKey: "Question Generator" },
   "/solver": { icon: Calculator, nameKey: "Smart Solver" },

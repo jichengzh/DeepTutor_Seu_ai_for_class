@@ -254,6 +254,8 @@ export interface SidebarNavOrder {
 
 // Project Creator Types
 interface ProjectState {
+  mode: "task" | "syllabus";  // 新增：生成模式
+
   step: "config" | "task_generating" | "task_review" | "code_generating" | "complete";
   theme: string;
   selectedKb: string;
@@ -497,6 +499,7 @@ const DEFAULT_CHAT_STATE: ChatState = {
 };
 
 const DEFAULT_PROJECT_STATE: ProjectState = {
+  mode: "task",  // 新增：默认为任务书模式
   step: "config",
   theme: "",
   selectedKb: "",
@@ -688,7 +691,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   // --- Sidebar Customization State ---
   const DEFAULT_DESCRIPTION = "✨ Data Intelligence Lab @ HKU";
   const DEFAULT_NAV_ORDER: SidebarNavOrder = {
-    start: ["/", "/history", "/knowledge", "/notebook"],
+    start: ["/", "/history", "/knowledge", "/knowledge/graph", "/notebook"],
     learnResearch: [
       "/question",
       "/solver",
@@ -2247,6 +2250,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
           kb_name: state.selectedKb || null,
           web_search: state.webSearchEnabled,
           session_id: state.sessionId,
+          mode: state.mode,  // 新增：发送 mode 参数
         }),
       );
     };
