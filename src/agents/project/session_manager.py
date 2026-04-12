@@ -82,6 +82,7 @@ class ProjectSessionManager:
         theme: str,
         kb_name: str | None = None,
         reference_structure: dict[str, Any] | None = None,
+        mode: str = "task",
     ) -> str:
         """
         创建新会话，返回 session_id。
@@ -93,9 +94,11 @@ class ProjectSessionManager:
             "session_id": session_id,
             "theme": theme[:200],
             "kb_name": kb_name or "",
+            "mode": mode,
             "status": "init",
             "task_md_path": None,
             "task_docx_path": None,
+            "task_pdf_path": None,
             "repo_path": None,
             "reference_structure": reference_structure or {},
             "token_stats": {
@@ -150,8 +153,11 @@ class ProjectSessionManager:
                 "session_id": s.get("session_id"),
                 "theme": s.get("theme"),
                 "kb_name": s.get("kb_name"),
+                "mode": s.get("mode", "task"),
                 "status": s.get("status"),
                 "task_md_path": s.get("task_md_path"),
+                "task_docx_path": s.get("task_docx_path"),
+                "task_pdf_path": s.get("task_pdf_path"),
                 "repo_path": s.get("repo_path"),
                 "token_stats": s.get("token_stats"),
                 "created_at": s.get("created_at"),

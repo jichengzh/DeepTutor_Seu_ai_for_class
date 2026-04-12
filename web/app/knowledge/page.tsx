@@ -34,6 +34,7 @@ import {
   Image as ImageIcon,
   Layers,
   MoreVertical,
+  Network,
   Plus,
   Search,
   Upload,
@@ -45,6 +46,7 @@ import {
   AlertCircle,
   Star,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { apiUrl, wsUrl } from "@/lib/api";
 import { useGlobal } from "@/context/GlobalContext";
 import { useTranslation } from "react-i18next";
@@ -92,6 +94,7 @@ interface UploadFile {
 
 export default function KnowledgePage() {
   const { t } = useTranslation();
+  const router = useRouter();
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1083,6 +1086,15 @@ export default function KnowledgePage() {
                       title={t("Set as Default")}
                     >
                       <Star className="w-4 h-4" />
+                    </button>
+                  )}
+                  {kb.statistics.rag_initialized && kb.statistics.content_lists > 0 && (
+                    <button
+                      onClick={() => router.push(`/knowledge/graph?kb=${kb.name}`)}
+                      className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 rounded-lg text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      title={t("Knowledge Graph")}
+                    >
+                      <Network className="w-4 h-4" />
                     </button>
                   )}
                   <button

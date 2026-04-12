@@ -1,0 +1,102 @@
+system: |
+  You are a professional course syllabus design expert. Based on the structure and content
+  of a reference syllabus, generate a new syllabus with the same structure but entirely
+  new content for a given theme.
+  Requirements: professional, accurate, detailed; complete chapter structure; covers
+  teaching objectives, content arrangement, assessment methods, etc.
+  Output only Markdown content for the section, without extra commentary.
+
+# Syllabus chapter order (different from task document)
+# cover → Course name, major, semester, credits, hours, instructor
+# objectives → Course introduction, teaching objectives, prerequisites
+# prerequisites → Prerequisite knowledge requirements (optional)
+# content_structure → Course content and hours allocation (table: chapter/topic, hours, teaching method)
+# teaching_methods → Teaching methods and means (lectures, labs, discussions, assignments)
+# grading_scheme → Course assessment and grade evaluation (assessment methods, weights, grading standards)
+# teaching_materials → Textbooks and reference materials (recommended textbooks, reference books, online resources)
+# schedule → Teaching schedule (week, content topic, hours)
+
+section_prompts:
+  cover: |
+    Generate course syllabus cover information for theme: {theme}
+    Include: course name, course code, target major/program, semester, credits,
+    total hours, instructor.
+    Reference format:
+    {reference_content}
+    Output Markdown directly.
+
+  objectives: |
+    Generate course introduction and teaching objectives section for theme "{theme}".
+    Include:
+    1. Course introduction (100-200 words, describing course nature and main content)
+    2. Teaching objectives (4-6 items covering knowledge objectives, ability objectives, quality objectives)
+    3. Prerequisite courses (list required courses, write "None" if none)
+    Reference knowledge:
+    {rag_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  prerequisites: |
+    Generate prerequisite knowledge requirements section for theme "{theme}".
+    List the core knowledge and skills required before taking this course, explained item by item.
+    Reference knowledge:
+    {rag_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  content_structure: |
+    Generate course content and hours allocation section for theme "{theme}".
+    Requirements:
+    1. Present in table format with columns: Chapter Number, Chapter Topic, Hours Allocation, Teaching Method
+    2. Include 8-12 chapters, with reasonable total hours allocation
+    3. Teaching methods include: lectures, labs/practice, class discussions, assignment tutoring, etc.
+    Reference knowledge:
+    {rag_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown (with Markdown table) directly.
+
+  teaching_methods: |
+    Generate teaching methods and means section for theme "{theme}".
+    Detail the specific arrangements for each type of teaching method:
+    1. Theoretical teaching (lecture content, class interaction forms)
+    2. Lab/practice teaching (lab projects, practice requirements)
+    3. Course assignments (assignment types, submission frequency, grading proportion)
+    4. Class discussions and presentations (discussion topics, student presentation arrangements)
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  grading_scheme: |
+    Generate course assessment and grade evaluation section for theme "{theme}".
+    Requirements:
+    1. Assessment methods (final exam, regular grades, lab reports, etc.)
+    2. Grade weight allocation (table format: Assessment Item, Weight, Description)
+    3. Grading standards (specific descriptions for Excellent, Good, Medium, Pass, Fail)
+    Reference structure:
+    {reference_content}
+    Output Markdown (with Markdown table) directly.
+
+  teaching_materials: |
+    Generate textbooks and reference materials section for theme "{theme}".
+    Requirements:
+    1. Recommended textbooks (1-2 books, specify book title, author, publisher, publication year, ISBN)
+    2. Reference books (3-5 books, list format)
+    3. Online resources (official documents, open-source projects, video courses, etc. links)
+    Reference knowledge:
+    {rag_context}
+    Web research:
+    {web_context}
+    Reference structure:
+    {reference_content}
+    Output Markdown directly.
+
+  schedule: |
+    Generate teaching schedule section for theme "{theme}".
+    Present in table format with columns: Week, Course Content Topic, Hours, Remarks
+    Include 16-18 weeks (arranged by semester), with weekly content corresponding to course chapters.
+    Reference structure:
+    {reference_content}
+    Output Markdown (with Markdown table) directly.

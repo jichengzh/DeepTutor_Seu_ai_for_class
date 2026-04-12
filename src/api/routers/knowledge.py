@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from src.api.utils.progress_broadcaster import ProgressBroadcaster
 from src.api.utils.task_id_manager import TaskIDManager
 from src.knowledge.add_documents import DocumentAdder
+from src.knowledge.chapter_graph import get_or_generate_chapter_graph, get_chapter_node_detail
 from src.knowledge.initializer import KnowledgeBaseInitializer
 from src.knowledge.manager import KnowledgeBaseManager
 from src.knowledge.progress_tracker import ProgressStage, ProgressTracker
@@ -871,3 +872,76 @@ async def sync_folder(kb_name: str, folder_id: str, background_tasks: Background
         raise HTTPException(status_code=404, detail=f"Knowledge base '{kb_name}' not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==============================================================================
+# Chapter Knowledge Graph Endpoints
+# ==============================================================================
+
+
+@router.get("/{kb_name}/chapter-graph")
+async def get_chapter_graph(kb_name: str, regenerate: bool = False):
+    """
+    Get chapter-level knowledge graph for visualization.
+
+    Returns a simplified graph with chapter/section nodes instead of
+    all entity nodes. Nodes can be clicked for detailed info.
+    """
+    try:
+        manager = get_kb_manager()
+        kb_dir = Path(manager.base_dir) / kb_name
+
+        if not kb_dir.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Knowledge base '{kb_name}' not found"
+            )
+
+        content_list_dir = kb_dir / "content_list"
+        if not content_list_dir.exists() or not list(content_list_dir.glob("*.json")):
+            raise HTTPException(
+                status_code=404,
+                detail="No content list available for this knowledge base. "
+                        "Please upload and process documents first."
+            )
+
+        graph = get_or_generate_chapter_graph(kb_dir, regenerate=regenerate)
+        return graph
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = format_exception_message(e)
+        logger.error(f"Failed to get chapter graph for KB '{kb_name}': {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+@router.get("/{kb_name}/chapter-graph/{node_id:path}")
+async def get_chapter_node(kb_name: str, node_id: str):
+    """
+    Get detailed information for a specific chapter/section node.
+
+    Returns full body text, numbered items (definitions, theorems),
+    and related chapters.
+    """
+    try:
+        manager = get_kb_manager()
+        kb_dir = Path(manager.base_dir) / kb_name
+
+        if not kb_dir.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Knowledge base '{kb_name}' not found"
+            )
+
+        detail = get_chapter_node_detail(kb_dir, node_id)
+        return detail
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = format_exception_message(e)
+        logger.error(f"Failed to get chapter node detail: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)

@@ -25,7 +25,7 @@ export const DEFAULT_SIDEBAR_DESCRIPTION = "✨ Data Intelligence Lab @ HKU";
  * Default navigation order
  */
 export const DEFAULT_NAV_ORDER: SidebarNavOrder = {
-  start: ["/", "/history", "/knowledge", "/notebook"],
+  start: ["/", "/history", "/knowledge", "/knowledge/graph", "/notebook"],
   learnResearch: [
     "/question",
     "/solver",

@@ -13,6 +13,11 @@ REST 端点：
 WebSocket 端点：
   WS /project/generate-task             流式生成任务书
   WS /project/generate-code             流式生成代码仓库（Claude Code CLI）
+  WS /project/review-chat               章节审阅对话
+  POST /project/{session_id}/apply-revision   应用章节修改
+  POST /project/reflections/extract     从对话历史提炼反思
+  GET  /project/reflections             获取全局反思列表
+  DELETE /project/reflections/{entry_id} 删除反思条目
 """
 
 import asyncio
@@ -20,12 +25,15 @@ import io
 import uuid
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 
 from src.agents.project import ProjectCoordinator, get_project_session_manager
 from src.agents.project.agents.task_parser import TaskParser
+from src.agents.project.reflection_manager import get_reflection_manager
 from src.logging.logger import get_logger
 from src.services.llm.config import get_llm_config
 from src.services.settings.interface_settings import get_ui_language
@@ -131,20 +139,27 @@ async def delete_session(session_id: str):
 
 @router.get("/project/{session_id}/download-task")
 async def download_task(session_id: str, format: str = "md"):
-    """下载生成的任务书（md 或 docx 格式）。"""
+    """下载生成的任务书 / 课程大纲（md / docx / pdf 格式）。"""
     mgr = get_project_session_manager()
     session = mgr.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
-    if format == "docx":
+    is_syllabus = session.get("mode") == "syllabus"
+    base_name = "generated_syllabus" if is_syllabus else "generated_task"
+
+    if format == "pdf":
+        file_path = session.get("task_pdf_path")
+        media_type = "application/pdf"
+        filename = f"{base_name}.pdf"
+    elif format == "docx":
         file_path = session.get("task_docx_path")
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        filename = "generated_task.docx"
+        filename = f"{base_name}.docx"
     else:
         file_path = session.get("task_md_path")
         media_type = "text/markdown"
-        filename = "generated_task.md"
+        filename = f"{base_name}.md"
 
     if not file_path or not Path(file_path).exists():
         raise HTTPException(status_code=404, detail="Task document not yet generated")
@@ -232,6 +247,7 @@ async def websocket_generate_task(websocket: WebSocket):
         kb_name = data.get("kb_name") or None
         web_search = bool(data.get("web_search", False))
         session_id = data.get("session_id") or None
+        mode = data.get("mode", "task")  # "task" or "syllabus"
 
         if not theme:
             await websocket.send_json({"type": "error", "content": "主题 (theme) 不能为空"})
@@ -244,6 +260,7 @@ async def websocket_generate_task(websocket: WebSocket):
                 theme=theme,
                 kb_name=kb_name,
                 reference_structure=reference_structure,
+                mode=mode,
             )
         mgr.update_session(session_id, status="task_generating")
 
@@ -257,6 +274,7 @@ async def websocket_generate_task(websocket: WebSocket):
             language=language,
             kb_name=kb_name,
             web_search_enabled=web_search,
+            mode=mode,
         )
 
         async def ws_callback(msg: dict):
@@ -274,12 +292,14 @@ async def websocket_generate_task(websocket: WebSocket):
         )
 
         # Update session with result paths
-        mgr.update_session(
-            session_id,
-            status="task_generated",
-            task_md_path=result["md_path"],
-            task_docx_path=result.get("docx_path"),
-        )
+        update_fields = {
+            "status": "task_generated",
+            "task_md_path": result["md_path"],
+            "task_docx_path": result.get("docx_path"),
+        }
+        if result.get("pdf_path"):
+            update_fields["task_pdf_path"] = result["pdf_path"]
+        mgr.update_session(session_id, **update_fields)
 
         # Signal pusher to stop
         await log_queue.put(None)
@@ -427,3 +447,162 @@ async def websocket_generate_code(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
+
+
+# ==============================================================================
+# 审阅修改 + 反思端点
+# ==============================================================================
+
+
+class ApplyRevisionRequest(BaseModel):
+    section_key: str
+    new_content: str
+    full_markdown: str  # 修改后的完整文档 Markdown
+
+
+class ExtractReflectionsRequest(BaseModel):
+    chat_histories: dict[str, list[dict[str, Any]]]
+    theme: str = ""
+
+
+@router.websocket("/project/review-chat")
+async def websocket_review_chat(websocket: WebSocket):
+    """
+    章节审阅对话（流式）。
+
+    Client → Server:
+        {"section_key": "cover", "section_title": "封面信息",
+         "section_content": "...", "message": "请修改...",
+         "chat_history": [...]}
+
+    Server → Client (stream):
+        {"type": "chunk", "content": "..."}
+        {"type": "complete", "content": "full response", "revised_section": "..."|null}
+    """
+    await websocket.accept()
+    try:
+        data = await websocket.receive_json()
+        section_key = data.get("section_key", "")
+        section_title = data.get("section_title", "")
+        section_content = data.get("section_content", "")
+        user_message = data.get("message", "").strip()
+        chat_history = data.get("chat_history", [])
+
+        if not user_message:
+            await websocket.send_json({"type": "error", "content": "修改意见不能为空"})
+            return
+
+        reflection_text = get_reflection_manager().get_prompt_text()
+
+        from src.agents.project.agents.review_agent import (
+            review_section_stream,
+            parse_revised_section,
+        )
+
+        full_response = ""
+        async for chunk in review_section_stream(
+            section_key=section_key,
+            section_title=section_title,
+            section_content=section_content,
+            user_message=user_message,
+            chat_history=chat_history,
+            reflection_text=reflection_text,
+        ):
+            full_response += chunk
+            await websocket.send_json({"type": "chunk", "content": chunk})
+
+        revised = parse_revised_section(full_response)
+        await websocket.send_json({
+            "type": "complete",
+            "content": full_response,
+            "revised_section": revised,
+        })
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected during review chat")
+    except Exception as e:
+        logger.exception(f"Review chat error: {e}")
+        try:
+            await websocket.send_json({"type": "error", "content": str(e)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@router.post("/project/{session_id}/apply-revision")
+async def apply_revision(session_id: str, req: ApplyRevisionRequest):
+    """将修改后的章节内容写回 md/docx 文件。"""
+    mgr = get_project_session_manager()
+    session = mgr.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    md_path = session.get("task_md_path")
+    if not md_path:
+        raise HTTPException(status_code=404, detail="Task md file path not found in session")
+
+    md_file = Path(md_path)
+    try:
+        # 重写 Markdown 文件
+        md_file.write_text(req.full_markdown, encoding="utf-8")
+
+        # 重新导出 docx
+        docx_path = md_file.with_suffix(".docx")
+        try:
+            from docx import Document
+            doc = Document()
+            for line in req.full_markdown.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("# "):
+                    doc.add_heading(stripped[2:], level=1)
+                elif stripped.startswith("## "):
+                    doc.add_heading(stripped[3:], level=2)
+                elif stripped.startswith("### "):
+                    doc.add_heading(stripped[4:], level=3)
+                elif stripped == "---":
+                    doc.add_paragraph("─" * 40)
+                elif stripped:
+                    doc.add_paragraph(stripped)
+            doc.save(str(docx_path))
+            mgr.update_session(session_id, task_docx_path=str(docx_path))
+        except Exception as e:
+            logger.warning(f"docx re-export failed: {e}")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write file: {e}")
+
+    return {"status": "ok", "section_key": req.section_key}
+
+
+@router.post("/project/reflections/extract")
+async def extract_reflections_endpoint(req: ExtractReflectionsRequest):
+    """从对话历史提炼反思要点并存入全局反思库。"""
+    from src.agents.project.agents.review_agent import extract_reflections
+
+    rules = await extract_reflections(req.chat_histories, req.theme)
+    mgr = get_reflection_manager()
+    added = mgr.add_entries_batch(rules, source=req.theme)
+    return {
+        "extracted_rules": rules,
+        "added_count": added,
+        "total_entries": len(mgr.list_entries()),
+    }
+
+
+@router.get("/project/reflections")
+async def get_reflections():
+    """获取全局反思列表。"""
+    return {"entries": get_reflection_manager().list_entries()}
+
+
+@router.delete("/project/reflections/{entry_id}")
+async def delete_reflection(entry_id: str):
+    """删除一条反思。"""
+    deleted = get_reflection_manager().delete_entry(entry_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Reflection entry not found")
+    return {"deleted": entry_id}

@@ -255,6 +255,7 @@ export interface SidebarNavOrder {
 // Project Creator Types
 interface ProjectState {
   step: "config" | "task_generating" | "task_review" | "code_generating" | "complete";
+  mode: "task" | "syllabus";
   theme: string;
   selectedKb: string;
   webSearchEnabled: boolean;
@@ -269,6 +270,9 @@ interface ProjectState {
   currentSection: string | null;
   taskMdPath: string | null;
   taskDocxPath: string | null;
+  // Review (审阅修改)
+  reviewSelectedSection: string | null;
+  reviewChatHistories: Record<string, Array<{ role: string; content: string; revisedSection?: string | null; accepted?: boolean }>>;
   // Code generation (Phase 3)
   agentLogs: AgentLogEntry[];
   generatedFiles: FileTreeNode[];
@@ -498,6 +502,7 @@ const DEFAULT_CHAT_STATE: ChatState = {
 
 const DEFAULT_PROJECT_STATE: ProjectState = {
   step: "config",
+  mode: "task",
   theme: "",
   selectedKb: "",
   webSearchEnabled: false,
@@ -511,6 +516,8 @@ const DEFAULT_PROJECT_STATE: ProjectState = {
   currentSection: null,
   taskMdPath: null,
   taskDocxPath: null,
+  reviewSelectedSection: null,
+  reviewChatHistories: {},
   agentLogs: [],
   generatedFiles: [],
   repoPath: null,
@@ -688,7 +695,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   // --- Sidebar Customization State ---
   const DEFAULT_DESCRIPTION = "✨ Data Intelligence Lab @ HKU";
   const DEFAULT_NAV_ORDER: SidebarNavOrder = {
-    start: ["/", "/history", "/knowledge", "/notebook"],
+    start: ["/", "/history", "/knowledge", "/knowledge/graph", "/notebook"],
     learnResearch: [
       "/question",
       "/solver",
@@ -716,7 +723,14 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
             setSidebarDescriptionState(data.description);
           }
           if (data.nav_order) {
-            setSidebarNavOrderState(data.nav_order);
+            // Merge: ensure new default items not in saved order are appended
+            const saved = data.nav_order as SidebarNavOrder;
+            const allSaved = [...(saved.start || []), ...(saved.learnResearch || [])];
+            const missing = DEFAULT_NAV_ORDER.start.filter((p) => !allSaved.includes(p));
+            if (missing.length > 0) {
+              saved.start = [...(saved.start || []), ...missing];
+            }
+            setSidebarNavOrderState(saved);
           }
         }
       } catch (e) {
@@ -2247,6 +2261,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
           kb_name: state.selectedKb || null,
           web_search: state.webSearchEnabled,
           session_id: state.sessionId,
+          mode: state.mode,
         }),
       );
     };

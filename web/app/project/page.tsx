@@ -18,16 +18,19 @@ import {
   Terminal,
   Wrench,
   MessageSquare,
+  BookOpen,
 } from "lucide-react";
 import { useGlobal } from "@/context/GlobalContext";
 import { useTranslation } from "react-i18next";
 import { apiUrl } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import SectionNav from "./components/SectionNav";
+import ReviewPanel from "./components/ReviewPanel";
 
-// ─── Section names ───────────────────────────────────────────────────────────
+// ─── Section names for task mode ────────────────────────────────────────────
 
-const SECTION_NAMES: Record<string, string> = {
+const TASK_SECTION_NAMES: Record<string, string> = {
   cover: "封面信息",
   objectives: "背景与目标",
   modules: "模块概述",
@@ -39,24 +42,46 @@ const SECTION_NAMES: Record<string, string> = {
   references: "参考资源",
 };
 
-const SECTION_ORDER = Object.keys(SECTION_NAMES);
+const TASK_SECTION_ORDER = Object.keys(TASK_SECTION_NAMES);
 
-// ─── Step indicator ───────────────────────────────────────────────────────────
+// ─── Section names for syllabus mode ────────────────────────────────────────
 
-const STEPS = [
+const SYLLABUS_SECTION_NAMES: Record<string, string> = {
+  cover: "封面信息",
+  objectives: "课程简介与教学目标",
+  prerequisites: "前置知识要求",
+  content_structure: "课程内容及学时分配",
+  teaching_methods: "教学方法与手段",
+  grading_scheme: "课程考核与成绩评定",
+  teaching_materials: "教材与参考资料",
+  schedule: "教学进度安排",
+};
+
+const SYLLABUS_SECTION_ORDER = Object.keys(SYLLABUS_SECTION_NAMES);
+
+// ─── Step indicator ─────────────────────────────────────────────────────────
+
+const TASK_STEPS = [
   { key: "config", label: "配置" },
   { key: "task_generating", label: "生成中" },
   { key: "task_review", label: "审阅" },
   { key: "code_generating", label: "代码" },
 ];
 
-function StepIndicator({ current }: { current: string }) {
-  const stepIndex = STEPS.findIndex((s) => s.key === current);
-  const displayIndex = current === "complete" ? 3 : stepIndex;
+const SYLLABUS_STEPS = [
+  { key: "config", label: "配置" },
+  { key: "task_generating", label: "生成中" },
+  { key: "task_review", label: "审阅" },
+];
+
+function StepIndicator({ current, mode }: { current: string; mode: string }) {
+  const steps = mode === "syllabus" ? SYLLABUS_STEPS : TASK_STEPS;
+  const stepIndex = steps.findIndex((s) => s.key === current);
+  const displayIndex = current === "complete" ? steps.length - 1 : stepIndex;
 
   return (
     <div className="flex items-center gap-2 mb-6">
-      {STEPS.map((step, i) => (
+      {steps.map((step, i) => (
         <div key={step.key} className="flex items-center gap-2">
           <div
             className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold border-2 transition-colors ${
@@ -76,7 +101,7 @@ function StepIndicator({ current }: { current: string }) {
           >
             {step.label}
           </span>
-          {i < STEPS.length - 1 && (
+          {i < steps.length - 1 && (
             <ChevronRight className="w-4 h-4 text-gray-300 mx-1" />
           )}
         </div>
@@ -90,13 +115,18 @@ function StepIndicator({ current }: { current: string }) {
 function ChapterProgress({
   sections,
   currentSection,
+  mode,
 }: {
   sections: Record<string, string>;
   currentSection: string | null;
+  mode: string;
 }) {
+  const sectionNames = mode === "syllabus" ? SYLLABUS_SECTION_NAMES : TASK_SECTION_NAMES;
+  const sectionOrder = mode === "syllabus" ? SYLLABUS_SECTION_ORDER : TASK_SECTION_ORDER;
+
   return (
     <ul className="space-y-2">
-      {SECTION_ORDER.map((key) => {
+      {sectionOrder.map((key) => {
         const done = !!sections[key];
         const active = key === currentSection && !done;
         return (
@@ -113,7 +143,7 @@ function ChapterProgress({
                 done ? "text-green-600" : active ? "text-blue-600 font-medium" : "text-gray-400"
               }`}
             >
-              {SECTION_NAMES[key]}
+              {sectionNames[key] ?? key}
             </span>
           </li>
         );
@@ -213,6 +243,8 @@ export default function ProjectPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [newSectionTitle, setNewSectionTitle] = useState("");
+  const [reflectionResult, setReflectionResult] = useState<{ rules: string[]; total: number } | null>(null);
+  const [extracting, setExtracting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch knowledge base list
@@ -224,10 +256,14 @@ export default function ProjectPage() {
   }, []);
 
   const {
-    step, theme, selectedKb, webSearchEnabled, difficulty, cliTool, codexApiKey,
+    step, mode, theme, selectedKb, webSearchEnabled, difficulty, cliTool, codexApiKey,
     referenceStructure, taskContent, taskSections, currentSection, sessionId,
     logs, error, agentLogs, generatedFiles, verifyPassed, coverageMap,
   } = projectState;
+
+  const isSyllabus = mode === "syllabus";
+  const sectionNames = isSyllabus ? SYLLABUS_SECTION_NAMES : TASK_SECTION_NAMES;
+  const sectionOrder = isSyllabus ? SYLLABUS_SECTION_ORDER : TASK_SECTION_ORDER;
 
   // ── File upload ──
   const handleFileChange = useCallback(
@@ -263,12 +299,12 @@ export default function ProjectPage() {
     theme.trim().length > 0 && referenceStructure !== null && !isUploading;
 
   // ── Download helper ──
-  const downloadTask = (format: "md" | "docx") => {
+  const downloadTask = (format: "md" | "docx" | "pdf") => {
     if (!sessionId) return;
     const url = apiUrl(`/api/v1/project/${sessionId}/download-task?format=${format}`);
     const a = document.createElement("a");
     a.href = url;
-    a.download = format === "md" ? "generated_task.md" : "generated_task.docx";
+    a.download = "";
     a.click();
   };
 
@@ -278,8 +314,13 @@ export default function ProjectPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <FolderGit2 className="w-6 h-6 text-blue-500" />
-          <h1 className="text-xl font-semibold">Project Creator</h1>
+          {isSyllabus
+            ? <BookOpen className="w-6 h-6 text-green-500" />
+            : <FolderGit2 className="w-6 h-6 text-blue-500" />
+          }
+          <h1 className="text-xl font-semibold">
+            {isSyllabus ? "课程大纲生成" : "Project Creator"}
+          </h1>
         </div>
         <div className="flex gap-2">
           {logs.length > 0 && (
@@ -302,7 +343,7 @@ export default function ProjectPage() {
       </div>
 
       {/* Step indicator */}
-      <StepIndicator current={step} />
+      <StepIndicator current={step} mode={mode} />
 
       {/* Error banner */}
       {error && (
@@ -321,6 +362,42 @@ export default function ProjectPage() {
       {/* ── Step 1: Config ── */}
       {step === "config" && (
         <div className="flex flex-col gap-6">
+          {/* Mode selection */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setProjectState((p) => ({ ...p, mode: "task" }))}
+              className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 transition-colors ${
+                !isSyllabus
+                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                  : "border-gray-200 hover:border-gray-300 dark:border-gray-600"
+              }`}
+            >
+              <FolderGit2 className={`w-5 h-5 ${!isSyllabus ? "text-blue-500" : "text-gray-400"}`} />
+              <div className="text-left">
+                <p className={`text-sm font-medium ${!isSyllabus ? "text-blue-700" : "text-gray-600"}`}>
+                  任务书生成
+                </p>
+                <p className="text-xs text-gray-400">生成任务书 + 代码仓库</p>
+              </div>
+            </button>
+            <button
+              onClick={() => setProjectState((p) => ({ ...p, mode: "syllabus" }))}
+              className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 transition-colors ${
+                isSyllabus
+                  ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                  : "border-gray-200 hover:border-gray-300 dark:border-gray-600"
+              }`}
+            >
+              <BookOpen className={`w-5 h-5 ${isSyllabus ? "text-green-500" : "text-gray-400"}`} />
+              <div className="text-left">
+                <p className={`text-sm font-medium ${isSyllabus ? "text-green-700" : "text-gray-600"}`}>
+                  课程大纲生成
+                </p>
+                <p className="text-xs text-gray-400">生成课程教学大纲文档</p>
+              </div>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Upload card */}
             <div className="border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-3 hover:border-blue-400 transition-colors cursor-pointer"
@@ -328,7 +405,9 @@ export default function ProjectPage() {
             >
               <Upload className="w-8 h-8 text-gray-400" />
               <div className="text-center">
-                <p className="font-medium text-sm">上传参考任务书</p>
+                <p className="font-medium text-sm">
+                  上传参考{isSyllabus ? "课程大纲" : "任务书"}
+                </p>
                 <p className="text-xs text-gray-400 mt-1">支持 .docx / .pdf</p>
               </div>
               {isUploading && <Loader2 className="w-5 h-5 animate-spin text-blue-500" />}
@@ -348,12 +427,14 @@ export default function ProjectPage() {
               />
             </div>
 
-            {/* Theme input */}
+            {/* Theme input & options */}
             <div className="flex flex-col gap-3">
-              <label className="text-sm font-medium">新任务书主题</label>
+              <label className="text-sm font-medium">
+                {isSyllabus ? "新课程主题" : "新任务书主题"}
+              </label>
               <textarea
                 className="border rounded-lg p-3 text-sm resize-none h-24 focus:ring-2 focus:ring-blue-300 outline-none"
-                placeholder="例如：ROS 机器人导航暑期实习"
+                placeholder={isSyllabus ? "例如：机器学习导论" : "例如：ROS 机器人导航暑期实习"}
                 value={theme}
                 onChange={(e) =>
                   setProjectState((p) => ({ ...p, theme: e.target.value }))
@@ -393,76 +474,82 @@ export default function ProjectPage() {
                 </div>
                 <span className="text-sm text-gray-600">开启网络搜索</span>
               </label>
-              {/* Difficulty selector */}
-              <div className="mt-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  代码难度
-                </label>
-                <div className="flex gap-2">
-                  {(["low", "medium", "high"] as const).map((level) => {
-                    const labels = { low: "低难度", medium: "中等", high: "高难度" };
-                    const hints = { low: "≤10文件 / ≤3000行", medium: "≤25文件 / ≤7000行", high: "≤40文件 / ≤10000行" };
-                    return (
-                      <button
-                        key={level}
-                        type="button"
-                        onClick={() => setProjectState((p) => ({ ...p, difficulty: level }))}
-                        className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
-                          difficulty === level
-                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        <div className="font-medium">{labels[level]}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{hints[level]}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
 
-              {/* CLI 工具选择 */}
-              <div className="mt-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  代码生成工具
-                </label>
-                <div className="flex gap-2">
-                  {(["claude", "codex"] as const).map((tool) => {
-                    const labels = { claude: "Claude CLI", codex: "Codex CLI" };
-                    const hints  = { claude: "OAuth 认证（Claude Pro）", codex: "OpenAI Codex" };
-                    return (
-                      <button
-                        key={tool}
-                        type="button"
-                        onClick={() => setProjectState((p) => ({ ...p, cliTool: tool }))}
-                        className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
-                          cliTool === tool
-                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        <div className="font-medium">{labels[tool]}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{hints[tool]}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Task mode only: difficulty + CLI tool */}
+              {!isSyllabus && (
+                <>
+                  {/* Difficulty selector */}
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      代码难度
+                    </label>
+                    <div className="flex gap-2">
+                      {(["low", "medium", "high"] as const).map((level) => {
+                        const labels = { low: "低难度", medium: "中等", high: "高难度" };
+                        const hints = { low: "≤10文件 / ≤3000行", medium: "≤25文件 / ≤7000行", high: "≤40文件 / ≤10000行" };
+                        return (
+                          <button
+                            key={level}
+                            type="button"
+                            onClick={() => setProjectState((p) => ({ ...p, difficulty: level }))}
+                            className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+                              difficulty === level
+                                ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
+                            }`}
+                          >
+                            <div className="font-medium">{labels[level]}</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{hints[level]}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-              {/* Codex API Key 输入（仅 Codex 模式显示） */}
-              {cliTool === "codex" && (
-                <div className="mt-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    OpenAI API Key（可选，留空则使用 login 认证）
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="sk-..."
-                    value={codexApiKey}
-                    onChange={(e) => setProjectState((p) => ({ ...p, codexApiKey: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-                  />
-                </div>
+                  {/* CLI tool selector */}
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      代码生成工具
+                    </label>
+                    <div className="flex gap-2">
+                      {(["claude", "codex"] as const).map((tool) => {
+                        const labels = { claude: "Claude CLI", codex: "Codex CLI" };
+                        const hints  = { claude: "OAuth 认证（Claude Pro）", codex: "OpenAI Codex" };
+                        return (
+                          <button
+                            key={tool}
+                            type="button"
+                            onClick={() => setProjectState((p) => ({ ...p, cliTool: tool }))}
+                            className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+                              cliTool === tool
+                                ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400"
+                            }`}
+                          >
+                            <div className="font-medium">{labels[tool]}</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{hints[tool]}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Codex API Key */}
+                  {cliTool === "codex" && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        OpenAI API Key（可选，留空则使用 login 认证）
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="sk-..."
+                        value={codexApiKey}
+                        onChange={(e) => setProjectState((p) => ({ ...p, codexApiKey: e.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -479,12 +566,12 @@ export default function ProjectPage() {
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* 动态遍历：先标准 key（按 SECTION_ORDER 顺序），再自定义 key */}
+                {/* 动态遍历：先标准 key（按 section order 顺序），再自定义 key */}
                 {[
-                  ...SECTION_ORDER.filter((k) => referenceStructure.sections?.[k] !== undefined),
-                  ...Object.keys(referenceStructure.sections || {}).filter((k) => !SECTION_ORDER.includes(k)),
+                  ...sectionOrder.filter((k) => referenceStructure.sections?.[k] !== undefined),
+                  ...Object.keys(referenceStructure.sections || {}).filter((k) => !sectionOrder.includes(k)),
                 ].map((key) => {
-                  const label = SECTION_NAMES[key] ?? referenceStructure.sections?.[key]?.title ?? key;
+                  const label = sectionNames[key] ?? referenceStructure.sections?.[key]?.title ?? key;
                   const sec = referenceStructure.sections?.[key];
                   const content = sec?.content ?? "";
                   const isEmpty = !content.trim();
@@ -576,9 +663,11 @@ export default function ProjectPage() {
           <button
             disabled={!canGenerate}
             onClick={startTaskGeneration}
-            className="self-end flex items-center gap-2 px-6 py-2.5 bg-blue-500 text-white rounded-lg font-medium text-sm hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className={`self-end flex items-center gap-2 px-6 py-2.5 text-white rounded-lg font-medium text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+              isSyllabus ? "bg-green-500 hover:bg-green-600" : "bg-blue-500 hover:bg-blue-600"
+            }`}
           >
-            开始生成任务书 <ChevronRight className="w-4 h-4" />
+            开始生成{isSyllabus ? "课程大纲" : "任务书"} <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -589,7 +678,7 @@ export default function ProjectPage() {
           {/* Left: chapter progress */}
           <div className="w-48 shrink-0">
             <p className="text-sm font-medium mb-3 text-gray-700">章节进度</p>
-            <ChapterProgress sections={taskSections} currentSection={currentSection} />
+            <ChapterProgress sections={taskSections} currentSection={currentSection} mode={mode} />
           </div>
 
           {/* Right: streaming markdown */}
@@ -605,41 +694,242 @@ export default function ProjectPage() {
         </div>
       )}
 
-      {/* ── Step 3: Review ── */}
-      {step === "task_review" && (
-        <div className="flex flex-col gap-4 flex-1 min-h-0">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-gray-700">任务书预览</p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => downloadTask("md")}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50"
-              >
-                <Download className="w-3.5 h-3.5" /> 下载 .md
-              </button>
-              <button
-                onClick={() => downloadTask("docx")}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50"
-              >
-                <FileText className="w-3.5 h-3.5" /> 下载 .docx
-              </button>
-              <button
-                onClick={startCodeGeneration}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-              >
-                <FolderGit2 className="w-3.5 h-3.5" /> 生成代码仓库
-              </button>
+      {/* ── Step 3: Review (三栏布局) ── */}
+      {step === "task_review" && (() => {
+        // 解析 taskContent 为章节 map（按 --- 和 ## 分割）
+        const parsedSections: { key: string; title: string; content: string }[] = [];
+        const allSectionKeys = Object.keys(taskSections);
+        if (allSectionKeys.length > 0) {
+          // 使用 taskSections（逐章节生成时保存的）
+          const order = [...sectionOrder.filter((k) => taskSections[k]), ...allSectionKeys.filter((k) => !sectionOrder.includes(k) && taskSections[k])];
+          for (const key of order) {
+            parsedSections.push({
+              key,
+              title: sectionNames[key] ?? key,
+              content: taskSections[key] || "",
+            });
+          }
+        }
+        // 如果没有 taskSections，fallback 到整篇
+        if (parsedSections.length === 0 && taskContent) {
+          parsedSections.push({ key: "full", title: "完整文档", content: taskContent });
+        }
+
+        const reviewSelected = projectState.reviewSelectedSection || parsedSections[0]?.key || null;
+        const selectedSec = parsedSections.find((s) => s.key === reviewSelected);
+        const chatHistories = projectState.reviewChatHistories || {};
+
+        const handleChatUpdate = (sectionKey: string, messages: any[]) => {
+          setProjectState((prev) => ({
+            ...prev,
+            reviewChatHistories: { ...prev.reviewChatHistories, [sectionKey]: messages },
+          }));
+        };
+
+        const handleAcceptRevision = async (sectionKey: string, newContent: string) => {
+          // 更新前端状态
+          let fullMd = "";
+          setProjectState((prev) => {
+            const newSections = { ...prev.taskSections, [sectionKey]: newContent };
+            const order = [...sectionOrder.filter((k) => newSections[k]), ...Object.keys(newSections).filter((k) => !sectionOrder.includes(k) && newSections[k])];
+            const suffix = isSyllabus ? "课程大纲" : "实习任务书";
+            fullMd = `# ${prev.theme} — ${suffix}\n\n`;
+            for (const k of order) {
+              if (newSections[k]?.trim()) {
+                fullMd += newSections[k].trim() + "\n\n---\n\n";
+              }
+            }
+            return { ...prev, taskSections: newSections, taskContent: fullMd };
+          });
+
+          // 同步写回后端文件（更新 md + docx）
+          if (sessionId) {
+            // fullMd 可能在 setState 回调中还未赋值完，用 setTimeout 确保拿到最新值
+            setTimeout(async () => {
+              try {
+                const currentState = projectState;
+                const newSections = { ...currentState.taskSections, [sectionKey]: newContent };
+                const order = [...sectionOrder.filter((k) => newSections[k]), ...Object.keys(newSections).filter((k) => !sectionOrder.includes(k) && newSections[k])];
+                const suffix = isSyllabus ? "课程大纲" : "实习任务书";
+                let md = `# ${currentState.theme} — ${suffix}\n\n`;
+                for (const k of order) {
+                  if (newSections[k]?.trim()) {
+                    md += newSections[k].trim() + "\n\n---\n\n";
+                  }
+                }
+                await fetch(apiUrl(`/api/v1/project/${sessionId}/apply-revision`), {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    section_key: sectionKey,
+                    new_content: newContent,
+                    full_markdown: md,
+                  }),
+                });
+              } catch (e) {
+                console.error("Failed to sync revision to backend:", e);
+              }
+            }, 100);
+          }
+        };
+
+        const handleExtractReflections = async () => {
+          setExtracting(true);
+          setReflectionResult(null);
+          try {
+            const resp = await fetch(apiUrl("/api/v1/project/reflections/extract"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_histories: chatHistories,
+                theme: projectState.theme,
+              }),
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              setReflectionResult({
+                rules: data.extracted_rules || [],
+                total: data.total_entries || 0,
+              });
+            } else {
+              const errText = await resp.text();
+              console.error("Extract reflections failed:", resp.status, errText);
+              setReflectionResult({ rules: [`提炼失败: ${resp.status} ${errText.slice(0, 100)}`], total: 0 });
+            }
+          } catch (e: any) {
+            console.error("Extract reflections error:", e);
+            setReflectionResult({ rules: [`请求失败: ${e.message || e}`], total: 0 });
+          }
+          setExtracting(false);
+        };
+
+        // Check if any section has chat history
+        const hasAnyChatHistory = Object.values(chatHistories).some((h) => h && h.length > 0);
+
+        return (
+          <div className="flex flex-1 min-h-0 gap-0">
+            {/* Left: Section navigation */}
+            <div className="w-48 shrink-0 border-r border-gray-200 dark:border-gray-700">
+              <SectionNav
+                sections={parsedSections.map((s) => ({
+                  key: s.key,
+                  title: s.title,
+                  hasRevision: (chatHistories[s.key] || []).some((m: any) => m.accepted),
+                  hasChat: (chatHistories[s.key] || []).length > 0,
+                }))}
+                selectedKey={reviewSelected}
+                onSelect={(key) =>
+                  setProjectState((prev) => ({ ...prev, reviewSelectedSection: key }))
+                }
+              />
             </div>
-          </div>
 
-          <div className="flex-1 overflow-y-auto border rounded-xl p-5 prose prose-sm max-w-none dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{taskContent}</ReactMarkdown>
-          </div>
-        </div>
-      )}
+            {/* Center: Document preview */}
+            <div className="flex-1 flex flex-col min-w-0">
+              {/* Action bar */}
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {isSyllabus ? "课程大纲预览" : "任务书预览"}
+                </p>
+                <div className="flex gap-2">
+                  {hasAnyChatHistory && (
+                    <button
+                      onClick={handleExtractReflections}
+                      disabled={extracting}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-amber-300 text-amber-600 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+                    >
+                      {extracting ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> 提炼中...</>
+                      ) : (
+                        "提炼反思"
+                      )}
+                    </button>
+                  )}
+                  <button onClick={() => downloadTask("md")}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50">
+                    <Download className="w-3.5 h-3.5" /> .md
+                  </button>
+                  <button onClick={() => downloadTask("docx")}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50">
+                    <FileText className="w-3.5 h-3.5" /> .docx
+                  </button>
+                  {isSyllabus && (
+                    <button onClick={() => downloadTask("pdf")}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50">
+                      <FileText className="w-3.5 h-3.5" /> .pdf
+                    </button>
+                  )}
+                  {!isSyllabus && (
+                    <button onClick={startCodeGeneration}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors">
+                      <FolderGit2 className="w-3.5 h-3.5" /> 生成代码仓库
+                    </button>
+                  )}
+                </div>
+              </div>
 
-      {/* ── Step 4: Code generating / complete ── */}
-      {(step === "code_generating" || step === "complete") && (
+              {/* Reflection result banner */}
+              {reflectionResult && (
+                <div className="mx-4 mt-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                      反思提炼结果（已保存 {reflectionResult.rules.length} 条，全局共 {reflectionResult.total} 条）
+                    </h4>
+                    <button
+                      onClick={() => setReflectionResult(null)}
+                      className="text-amber-400 hover:text-amber-600 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {reflectionResult.rules.length > 0 ? (
+                    <ul className="space-y-1">
+                      {reflectionResult.rules.map((rule, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
+                          <CheckCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                          <span>{rule}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">未提炼到新的反思要点</p>
+                  )}
+                </div>
+              )}
+
+              {/* Preview area */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 prose prose-sm max-w-none dark:prose-invert">
+                {selectedSec ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {selectedSec.content}
+                  </ReactMarkdown>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {taskContent}
+                  </ReactMarkdown>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Review chat panel */}
+            {selectedSec && (
+              <div className="w-80 shrink-0 border-l border-gray-200 dark:border-gray-700">
+                <ReviewPanel
+                  sectionKey={selectedSec.key}
+                  sectionTitle={selectedSec.title}
+                  sectionContent={selectedSec.content}
+                  chatHistory={(chatHistories[selectedSec.key] || []) as any}
+                  onChatUpdate={handleChatUpdate}
+                  onAcceptRevision={handleAcceptRevision}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── Step 4: Code generating / complete (task mode only) ── */}
+      {!isSyllabus && (step === "code_generating" || step === "complete") && (
         <div className="flex gap-4 flex-1 min-h-0">
 
           {/* Left 1/3: Agent log */}
