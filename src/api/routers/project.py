@@ -138,33 +138,26 @@ async def delete_session(session_id: str):
 
 
 @router.get("/project/{session_id}/download-task")
-async def download_task(session_id: str, format: str = "md"):
-    """下载生成的任务书 / 课程大纲（md / docx / pdf 格式）。"""
+async def download_task(session_id: str):
+    """下载生成的任务书 / 课程大纲（.docx 格式）。"""
     mgr = get_project_session_manager()
     session = mgr.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
     is_syllabus = session.get("mode") == "syllabus"
-    base_name = "generated_syllabus" if is_syllabus else "generated_task"
-
-    if format == "pdf":
-        file_path = session.get("task_pdf_path")
-        media_type = "application/pdf"
-        filename = f"{base_name}.pdf"
-    elif format == "docx":
-        file_path = session.get("task_docx_path")
-        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        filename = f"{base_name}.docx"
-    else:
-        file_path = session.get("task_md_path")
-        media_type = "text/markdown"
-        filename = f"{base_name}.md"
+    suffix = "课程大纲" if is_syllabus else "实习任务书"
+    file_path = session.get("task_docx_path")
+    filename = f"{suffix}.docx"
 
     if not file_path or not Path(file_path).exists():
         raise HTTPException(status_code=404, detail="Task document not yet generated")
 
-    return FileResponse(path=file_path, media_type=media_type, filename=filename)
+    return FileResponse(
+        path=file_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=filename,
+    )
 
 
 @router.get("/project/{session_id}/download-repo")
@@ -221,7 +214,8 @@ async def websocket_generate_task(websocket: WebSocket):
 
     Client → Server:
         {"theme": "...", "reference_structure": {...},
-         "kb_name": "...", "web_search": true, "session_id": null}
+         "kb_name": "...", "web_search": true, "session_id": null,
+         "syllabus_markdown": "..."}
 
     Server → Client (stream):
         {"type": "status"|"log"|"chunk"|"section"|"token_stats"|"complete"|"error", ...}
@@ -248,6 +242,7 @@ async def websocket_generate_task(websocket: WebSocket):
         web_search = bool(data.get("web_search", False))
         session_id = data.get("session_id") or None
         mode = data.get("mode", "task")  # "task" or "syllabus"
+        syllabus_markdown = data.get("syllabus_markdown") or ""
 
         if not theme:
             await websocket.send_json({"type": "error", "content": "主题 (theme) 不能为空"})
@@ -289,17 +284,16 @@ async def websocket_generate_task(websocket: WebSocket):
         result = await coordinator.generate_task_document(
             theme=theme,
             reference_structure=reference_structure,
+            syllabus_markdown=syllabus_markdown,
         )
 
         # Update session with result paths
-        update_fields = {
-            "status": "task_generated",
-            "task_md_path": result["md_path"],
-            "task_docx_path": result.get("docx_path"),
-        }
-        if result.get("pdf_path"):
-            update_fields["task_pdf_path"] = result["pdf_path"]
-        mgr.update_session(session_id, **update_fields)
+        mgr.update_session(
+            session_id,
+            status="task_generated",
+            task_content=result.get("content", ""),
+            task_docx_path=result.get("docx_path"),
+        )
 
         # Signal pusher to stop
         await log_queue.put(None)
@@ -308,7 +302,6 @@ async def websocket_generate_task(websocket: WebSocket):
         await websocket.send_json({
             "type": "complete",
             "session_id": session_id,
-            "task_md_path": result["md_path"],
             "task_content": result["content"],
         })
 
@@ -535,45 +528,24 @@ async def websocket_review_chat(websocket: WebSocket):
 
 @router.post("/project/{session_id}/apply-revision")
 async def apply_revision(session_id: str, req: ApplyRevisionRequest):
-    """将修改后的章节内容写回 md/docx 文件。"""
+    """将修改后的章节内容重新导出 docx 文件。"""
     mgr = get_project_session_manager()
     session = mgr.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
-    md_path = session.get("task_md_path")
-    if not md_path:
-        raise HTTPException(status_code=404, detail="Task md file path not found in session")
+    output_dir = _get_project_output_dir(session_id)
+    is_syllabus = session.get("mode") == "syllabus"
+    suffix = "课程大纲" if is_syllabus else "实习任务书"
+    docx_path = output_dir / f"generated_{suffix}.docx"
 
-    md_file = Path(md_path)
     try:
-        # 重写 Markdown 文件
-        md_file.write_text(req.full_markdown, encoding="utf-8")
-
-        # 重新导出 docx
-        docx_path = md_file.with_suffix(".docx")
-        try:
-            from docx import Document
-            doc = Document()
-            for line in req.full_markdown.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("# "):
-                    doc.add_heading(stripped[2:], level=1)
-                elif stripped.startswith("## "):
-                    doc.add_heading(stripped[3:], level=2)
-                elif stripped.startswith("### "):
-                    doc.add_heading(stripped[4:], level=3)
-                elif stripped == "---":
-                    doc.add_paragraph("─" * 40)
-                elif stripped:
-                    doc.add_paragraph(stripped)
-            doc.save(str(docx_path))
-            mgr.update_session(session_id, task_docx_path=str(docx_path))
-        except Exception as e:
-            logger.warning(f"docx re-export failed: {e}")
-
+        from src.agents.project.markdown_to_docx import convert_markdown_to_docx
+        convert_markdown_to_docx(req.full_markdown, docx_path)
+        mgr.update_session(session_id, task_docx_path=str(docx_path))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to write file: {e}")
+        logger.warning(f"docx re-export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to export docx: {e}")
 
     return {"status": "ok", "section_key": req.section_key}
 

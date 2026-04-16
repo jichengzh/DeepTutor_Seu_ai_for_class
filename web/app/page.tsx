@@ -8,7 +8,6 @@ import {
   User,
   Database,
   Globe,
-  Calculator,
   FileText,
   Microscope,
   Lightbulb,
@@ -17,7 +16,7 @@ import {
   BookOpen,
   Sparkles,
   Edit3,
-  GraduationCap,
+  FolderGit2,
   PenTool,
   Save,
 } from "lucide-react";
@@ -138,11 +137,18 @@ export default function HomePage() {
 
   const quickActions = [
     {
-      icon: Calculator,
-      label: t("Smart Problem Solving"),
-      href: "/solver",
+      icon: BookOpen,
+      label: t("Syllabus Generator"),
+      href: "/project/syllabus",
+      color: "green",
+      description: t("Generate course syllabus document"),
+    },
+    {
+      icon: FolderGit2,
+      label: t("Case Generator"),
+      href: "/project/case",
       color: "blue",
-      description: t("Multi-agent reasoning"),
+      description: t("Generate task document + code repository"),
     },
     {
       icon: PenTool,
@@ -164,13 +170,6 @@ export default function HomePage() {
       href: "/ideagen",
       color: "amber",
       description: t("Brainstorm & synthesize"),
-    },
-    {
-      icon: GraduationCap,
-      label: t("Guided Learning"),
-      href: "/guide",
-      color: "indigo",
-      description: t("Step-by-step tutoring"),
     },
     {
       icon: Edit3,

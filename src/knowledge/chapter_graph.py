@@ -11,59 +11,105 @@ from datetime import datetime
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+
+# ── Publisher boilerplate patterns (stripped from titles and body text) ───────
+
+_BOILERPLATE_RES = [
+    # O'Reilly AI-translation notice — appears at start or end of text blocks
+    re.compile(r"本作品已使用人工智能进行翻译[。，\s]*欢迎您提供反馈和意见[^translation]*translation-feedback@\S*", re.DOTALL),
+    re.compile(r"本作品已使用人工智能进行翻译[。，\s]*", re.DOTALL),
+    re.compile(r"欢迎您提供反馈和意见[：:]\s*translation-feedback@\S*", re.DOTALL),
+]
+
+# Strips chapter prefix then deduplicates repeated title text.
+# e.g. "第 6 章 Python 列表和字典Python 列表和字典" → "Python 列表和字典"
+_RE_CHAPTER_PREFIX = re.compile(
+    r"^(第\s*\d+\s*[章篇部]|第[一二三四五六七八九十百]+[章篇部]"
+    r"|Chapter\s*\d+|Part\s*[IVXivx\d]+)"
+    r"[.。、：:\s]*",
+    re.IGNORECASE,
+)
+
+
+def _clean_title(raw: str) -> str:
+    """Strip chapter prefix and deduplicate repeated title suffix."""
+    title = raw.strip()
+    # Remove chapter prefix
+    title = _RE_CHAPTER_PREFIX.sub("", title).strip()
+    if not title:
+        return raw.strip()
+    # Deduplicate: if second half == first half (with or without space separator)
+    # e.g. "Python 列表和字典Python 列表和字典" → "Python 列表和字典"
+    n = len(title)
+    for split in range(1, n // 2 + 1):
+        half = title[:split]
+        rest = title[split:].lstrip()
+        if rest == half:
+            return half
+    return title
+
+
+def _strip_body_boilerplate(text: str) -> str:
+    """Remove publisher boilerplate from anywhere in a body text string."""
+    for pattern in _BOILERPLATE_RES:
+        text = pattern.sub("", text)
+    return text.strip()
 
 
 # ── Heuristic level inference ────────────────────────────────────────────────
 
-# Patterns that indicate a top-level chapter heading (→ level 1)
+# Level 1: chapter-style headings
 _RE_CHAPTER = re.compile(
-    r"^(第\s*[一二三四五六七八九十百\d]+\s*[章篇部]"   # 第1章, 第二篇
-    r"|chapter\s+\d+"                                   # Chapter 1
-    r"|part\s+[ivxlcdm\d]+"                             # Part I, Part 2
+    r"^(第\s*[一二三四五六七八九十百零千万\d]+\s*[章篇部]"  # 第1章 / 第十章
+    r"|chapter\s+\d+"                                        # Chapter 1
+    r"|part\s+[ivxlcdm\d]+"                                  # Part I / Part 2
     r")",
     re.IGNORECASE,
 )
 
-# Patterns that indicate a numbered section (→ level 2 or 3)
-_RE_SECTION_2 = re.compile(r"^\d+\.\d+\s")         # "1.1 Title"
-_RE_SECTION_3 = re.compile(r"^\d+\.\d+\.\d+\s")    # "1.1.1 Title"
-
-# Short generic sub-headings commonly used as level-3 leaves
-_SHORT_SUBSECTION_TITLES = frozenset({
-    "问题", "解决方案", "解决方式", "讨论", "另请参见", "另请参阅",
-    "提示", "警告", "备注", "注意", "示例", "摘要", "总结", "小结",
-    "problem", "solution", "discussion", "see also", "tip", "warning",
-    "note", "example", "summary",
-})
+# Level 2: numbered sections like "1.1 Title" or "1.1.1 Title" (both → L2)
+_RE_SECTION = re.compile(r"^\d+\.\d+")   # matches N.N and N.N.N
 
 
-def _infer_heading_level(title: str) -> int:
+def _infer_heading_level(title: str) -> Optional[int]:
     """
     Infer a heading level from its text when the parser reports all
     headings as the same level (typically text_level=1).
 
-    Returns 1, 2, or 3.
+    Returns:
+        1  — chapter-level heading  (第N章 / Chapter N / Part N)
+        2  — numbered section       (N.N or N.N.N prefix)
+        None — everything else (sub-headings like 问题/解决方案, captions,
+               code snippets, figure labels, etc.) → skip / discard
     """
     t = title.strip()
-    t_lower = t.lower()
 
     if _RE_CHAPTER.match(t):
         return 1
-    if _RE_SECTION_3.match(t):
-        return 3
-    if _RE_SECTION_2.match(t):
+    if _RE_SECTION.match(t):
         return 2
-    if t_lower in _SHORT_SUBSECTION_TITLES:
-        return 3
-    # Default: level 2 (section under a chapter)
-    return 2
+    return None
 
 
 def _needs_level_inference(headings: List[Dict[str, Any]]) -> bool:
     """Return True when all headings share the same level (flat structure)."""
     levels = {h["level"] for h in headings}
     return len(levels) <= 1 and len(headings) > 1
+
+
+def _apply_level_inference(headings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Apply _infer_heading_level to each heading and discard entries where
+    the inferred level is None (captions, sub-headings, code lines, etc.).
+    """
+    result = []
+    for h in headings:
+        level = _infer_heading_level(h["title"])
+        if level is not None:
+            result.append({**h, "level": level})
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,10 +149,10 @@ def extract_chapter_structure(content_list_dir: Path) -> List[Dict[str, Any]]:
                     "doc_name": doc_name,
                 })
 
-        # If parser produced flat levels, apply heuristic inference
+        # If parser produced flat levels, apply heuristic inference and discard
+        # headings that don't match chapter or numbered-section patterns.
         if headings and _needs_level_inference(headings):
-            for h in headings:
-                h["level"] = _infer_heading_level(h["title"])
+            headings = _apply_level_inference(headings)
 
         # Fallback: no headings → treat entire document as single node
         if not headings:
@@ -114,7 +160,7 @@ def extract_chapter_structure(content_list_dir: Path) -> List[Dict[str, Any]]:
                 item.get("text", "") for item in items
                 if item.get("type") == "text"
             ]
-            body_preview = " ".join(body_texts)[:200]
+            body_preview = _strip_body_boilerplate(" ".join(body_texts))[:200]
             chapters.append({
                 "id": f"{doc_name}_doc",
                 "title": doc_name[0:50],  # Truncate long filenames
@@ -141,15 +187,17 @@ def extract_chapter_structure(content_list_dir: Path) -> List[Dict[str, Any]]:
             # Collect body items under this heading
             body_items = items[start_idx + 1 : end_idx]
             body_texts = [
-                item.get("text", "") for item in body_items
+                _strip_body_boilerplate(item.get("text", ""))
+                for item in body_items
                 if item.get("type") == "text" and item.get("text_level", 0) == 0
             ]
+            body_texts = [t for t in body_texts if t]  # drop empty after stripping
             body_preview = " ".join(body_texts)[:200]
 
             node_id = f"{doc_name}_h{i}"
             chapters.append({
                 "id": node_id,
-                "title": heading["title"][:100],  # Truncate long titles
+                "title": _clean_title(heading["title"])[:100],
                 "level": heading["level"],
                 "source_file": doc_name,
                 "page_idx": heading["page_idx"],
@@ -509,8 +557,10 @@ def get_chapter_node_detail(kb_dir: Path, node_id: str) -> Dict[str, Any]:
                 start, end = target["content_range"]
                 body_items = items[start:end]
                 full_body = "\n\n".join(
-                    item.get("text", "") for item in body_items
+                    _strip_body_boilerplate(item.get("text", ""))
+                    for item in body_items
                     if item.get("type") == "text"
+                    and _strip_body_boilerplate(item.get("text", ""))
                 )
                 # Update page range
                 pages_with_idx = [item.get("page_idx") for item in body_items if item.get("page_idx")]
@@ -558,11 +608,12 @@ def get_chapter_node_detail(kb_dir: Path, node_id: str) -> Dict[str, Any]:
             if related:
                 related_chapters.append({
                     "id": related["id"],
-                    "title": related["title"],
+                    "title": _clean_title(related["title"]),
                 })
 
     return {
         **node,
+        "title": _clean_title(node["title"]),
         "full_body": full_body,
         "numbered_items": numbered_items_in_chapter,
         "related_chapters": related_chapters,

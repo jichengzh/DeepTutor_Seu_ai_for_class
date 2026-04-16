@@ -57,12 +57,16 @@ class ProjectCoordinator:
         self,
         theme: str,
         reference_structure: dict[str, Any],
+        syllabus_markdown: str = "",
     ) -> dict[str, Any]:
         """
         生成任务书文档。
 
+        Args:
+            syllabus_markdown: 已生成的课程大纲 Markdown，用作任务书生成的参考输入。
+
         Returns:
-            {"content": str, "md_path": str, "docx_path": str}
+            {"content": str, "docx_path": str}
         """
         generator = TaskGenerator(
             output_dir=str(self.output_dir),
@@ -76,11 +80,12 @@ class ProjectCoordinator:
             kb_name=self.kb_name,
             web_search=self.web_search_enabled,
             ws_callback=self._send,
+            syllabus_markdown=syllabus_markdown,
         )
 
         await self._send({
             "type": "token_stats",
-            "stats": {"calls": 0, "tokens": 0},  # TODO: wire up real stats in later phase
+            "stats": {"calls": 0, "tokens": 0},
         })
 
         return result

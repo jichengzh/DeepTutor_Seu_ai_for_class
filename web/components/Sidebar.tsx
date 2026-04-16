@@ -10,12 +10,10 @@ import {
   History,
   BookOpen,
   PenTool,
-  Calculator,
   Microscope,
   Edit3,
   Settings,
   Book,
-  GraduationCap,
   Lightbulb,
   Github,
   Globe,
@@ -48,12 +46,11 @@ const ALL_NAV_ITEMS: Record<string, { icon: LucideIcon; nameKey: string }> = {
   "/knowledge/graph": { icon: Network, nameKey: "Knowledge Graph" },
   "/notebook": { icon: Book, nameKey: "Notebooks" },
   "/question": { icon: PenTool, nameKey: "Question Generator" },
-  "/solver": { icon: Calculator, nameKey: "Smart Solver" },
-  "/guide": { icon: GraduationCap, nameKey: "Guided Learning" },
   "/ideagen": { icon: Lightbulb, nameKey: "IdeaGen" },
   "/research": { icon: Microscope, nameKey: "Deep Research" },
   "/co_writer": { icon: Edit3, nameKey: "Co-Writer" },
-  "/project": { icon: FolderGit2, nameKey: "Project Creator" },
+  "/project/syllabus": { icon: BookOpen, nameKey: "Syllabus Generator" },
+  "/project/case": { icon: FolderGit2, nameKey: "Case Generator" },
 };
 
 export default function Sidebar() {

@@ -29,17 +29,18 @@ import SectionNav from "./components/SectionNav";
 import ReviewPanel from "./components/ReviewPanel";
 
 // ─── Section names for task mode ────────────────────────────────────────────
+// Values are i18n keys, resolved at render time via t().
 
 const TASK_SECTION_NAMES: Record<string, string> = {
-  cover: "封面信息",
-  objectives: "背景与目标",
-  modules: "模块概述",
-  details: "设计内容",
-  requirements: "作业要求",
-  deliverables: "提交成果",
-  grading: "成绩考核",
-  schedule: "时间安排",
-  references: "参考资源",
+  cover: "Section: Cover",
+  objectives: "Section: Background & Objectives",
+  modules: "Section: Modules Overview",
+  details: "Section: Design Content",
+  requirements: "Section: Requirements",
+  deliverables: "Section: Deliverables",
+  grading: "Section: Grading",
+  schedule: "Section: Schedule",
+  references: "Section: References",
 };
 
 const TASK_SECTION_ORDER = Object.keys(TASK_SECTION_NAMES);
@@ -47,14 +48,14 @@ const TASK_SECTION_ORDER = Object.keys(TASK_SECTION_NAMES);
 // ─── Section names for syllabus mode ────────────────────────────────────────
 
 const SYLLABUS_SECTION_NAMES: Record<string, string> = {
-  cover: "封面信息",
-  objectives: "课程简介与教学目标",
-  prerequisites: "前置知识要求",
-  content_structure: "课程内容及学时分配",
-  teaching_methods: "教学方法与手段",
-  grading_scheme: "课程考核与成绩评定",
-  teaching_materials: "教材与参考资料",
-  schedule: "教学进度安排",
+  cover: "Section: Cover",
+  objectives: "Section: Course Intro & Objectives",
+  prerequisites: "Section: Prerequisites",
+  content_structure: "Section: Content & Hours",
+  teaching_methods: "Section: Teaching Methods",
+  grading_scheme: "Section: Grading Scheme",
+  teaching_materials: "Section: Teaching Materials",
+  schedule: "Section: Teaching Schedule",
 };
 
 const SYLLABUS_SECTION_ORDER = Object.keys(SYLLABUS_SECTION_NAMES);
@@ -62,19 +63,20 @@ const SYLLABUS_SECTION_ORDER = Object.keys(SYLLABUS_SECTION_NAMES);
 // ─── Step indicator ─────────────────────────────────────────────────────────
 
 const TASK_STEPS = [
-  { key: "config", label: "配置" },
-  { key: "task_generating", label: "生成中" },
-  { key: "task_review", label: "审阅" },
-  { key: "code_generating", label: "代码" },
+  { key: "config", labelKey: "Step: Config" },
+  { key: "task_generating", labelKey: "Step: Generating" },
+  { key: "task_review", labelKey: "Step: Review" },
+  { key: "code_generating", labelKey: "Step: Code" },
 ];
 
 const SYLLABUS_STEPS = [
-  { key: "config", label: "配置" },
-  { key: "task_generating", label: "生成中" },
-  { key: "task_review", label: "审阅" },
+  { key: "config", labelKey: "Step: Config" },
+  { key: "task_generating", labelKey: "Step: Generating" },
+  { key: "task_review", labelKey: "Step: Review" },
 ];
 
 function StepIndicator({ current, mode }: { current: string; mode: string }) {
+  const { t } = useTranslation();
   const steps = mode === "syllabus" ? SYLLABUS_STEPS : TASK_STEPS;
   const stepIndex = steps.findIndex((s) => s.key === current);
   const displayIndex = current === "complete" ? steps.length - 1 : stepIndex;
@@ -99,7 +101,7 @@ function StepIndicator({ current, mode }: { current: string; mode: string }) {
               i === displayIndex ? "text-blue-600" : i < displayIndex ? "text-green-600" : "text-gray-400"
             }`}
           >
-            {step.label}
+            {t(step.labelKey)}
           </span>
           {i < steps.length - 1 && (
             <ChevronRight className="w-4 h-4 text-gray-300 mx-1" />
@@ -121,6 +123,7 @@ function ChapterProgress({
   currentSection: string | null;
   mode: string;
 }) {
+  const { t } = useTranslation();
   const sectionNames = mode === "syllabus" ? SYLLABUS_SECTION_NAMES : TASK_SECTION_NAMES;
   const sectionOrder = mode === "syllabus" ? SYLLABUS_SECTION_ORDER : TASK_SECTION_ORDER;
 
@@ -129,6 +132,7 @@ function ChapterProgress({
       {sectionOrder.map((key) => {
         const done = !!sections[key];
         const active = key === currentSection && !done;
+        const labelKey = sectionNames[key];
         return (
           <li key={key} className="flex items-center gap-2">
             {done ? (
@@ -143,7 +147,7 @@ function ChapterProgress({
                 done ? "text-green-600" : active ? "text-blue-600 font-medium" : "text-gray-400"
               }`}
             >
-              {sectionNames[key] ?? key}
+              {labelKey ? t(labelKey) : key}
             </span>
           </li>
         );
@@ -163,6 +167,7 @@ function LogDrawer({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -175,7 +180,7 @@ function LogDrawer({
       }`}
     >
       <div className="flex items-center justify-between p-4 border-b">
-        <span className="font-semibold text-sm">运行日志</span>
+        <span className="font-semibold text-sm">{t("Run Log")}</span>
         <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
           <X className="w-4 h-4" />
         </button>
@@ -227,7 +232,12 @@ function FileTree({ nodes, depth = 0 }: { nodes: FileTreeNode[]; depth?: number 
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function ProjectPage() {
+interface ProjectPageProps {
+  /** When set, pins the mode and hides the mode toggle UI. */
+  forcedMode?: "task" | "syllabus";
+}
+
+export default function ProjectPage({ forcedMode }: ProjectPageProps = {}) {
   const {
     projectState,
     setProjectState,
@@ -238,7 +248,16 @@ export default function ProjectPage() {
   } = useGlobal();
   const { t } = useTranslation();
 
+  // Force mode on mount if the route is a pinned one.
+  useEffect(() => {
+    if (forcedMode && projectState.mode !== forcedMode) {
+      setProjectState((p) => ({ ...p, mode: forcedMode }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forcedMode]);
+
   const [kbs, setKbs] = useState<string[]>([]);
+  const [syllabusSessions, setSyllabusSessions] = useState<Array<{ id: string; theme: string; content: string }>>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -255,10 +274,24 @@ export default function ProjectPage() {
       .catch(() => {});
   }, []);
 
+  // Fetch syllabus sessions for task mode linkage
+  useEffect(() => {
+    if (projectState.mode !== "task") return;
+    fetch(apiUrl("/api/v1/project/sessions?limit=50"))
+      .then((r) => r.json())
+      .then((data) => {
+        const sessions: Array<{ id: string; theme: string; content: string }> = (data.sessions ?? [])
+          .filter((s: any) => s.mode === "syllabus" && s.task_content)
+          .map((s: any) => ({ id: s.session_id, theme: s.theme || s.session_id, content: s.task_content }));
+        setSyllabusSessions(sessions);
+      })
+      .catch(() => {});
+  }, [projectState.mode]);
+
   const {
     step, mode, theme, selectedKb, webSearchEnabled, difficulty, cliTool, codexApiKey,
     referenceStructure, taskContent, taskSections, currentSection, sessionId,
-    logs, error, agentLogs, generatedFiles, verifyPassed, coverageMap,
+    syllabusMarkdown, logs, error, agentLogs, generatedFiles, verifyPassed, coverageMap,
   } = projectState;
 
   const isSyllabus = mode === "syllabus";
@@ -273,11 +306,11 @@ export default function ProjectPage() {
 
       const ext = file.name.split(".").pop()?.toLowerCase();
       if (!["docx", "pdf"].includes(ext || "")) {
-        setUploadError("仅支持 .docx 和 .pdf 格式");
+        setUploadError(t("Only .docx and .pdf supported"));
         return;
       }
       if (file.size === 0) {
-        setUploadError("文件不能为空");
+        setUploadError(t("File cannot be empty"));
         return;
       }
 
@@ -286,22 +319,22 @@ export default function ProjectPage() {
       try {
         await uploadReference(file);
       } catch (err: any) {
-        setUploadError(err.message || "上传失败");
+        setUploadError(err.message || t("Upload failed"));
       } finally {
         setIsUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [uploadReference],
+    [uploadReference, t],
   );
 
   const canGenerate =
     theme.trim().length > 0 && referenceStructure !== null && !isUploading;
 
   // ── Download helper ──
-  const downloadTask = (format: "md" | "docx" | "pdf") => {
+  const downloadTask = () => {
     if (!sessionId) return;
-    const url = apiUrl(`/api/v1/project/${sessionId}/download-task?format=${format}`);
+    const url = apiUrl(`/api/v1/project/${sessionId}/download-task`);
     const a = document.createElement("a");
     a.href = url;
     a.download = "";
@@ -319,7 +352,7 @@ export default function ProjectPage() {
             : <FolderGit2 className="w-6 h-6 text-blue-500" />
           }
           <h1 className="text-xl font-semibold">
-            {isSyllabus ? "课程大纲生成" : "Project Creator"}
+            {isSyllabus ? t("Syllabus Generator") : t("Case Generator")}
           </h1>
         </div>
         <div className="flex gap-2">
@@ -328,7 +361,7 @@ export default function ProjectPage() {
               onClick={() => setShowLogs(true)}
               className="text-xs px-3 py-1.5 rounded border hover:bg-gray-50 text-gray-600"
             >
-              日志 ({logs.length})
+              {t("Logs ({count})").replace("{count}", String(logs.length))}
             </button>
           )}
           {step !== "config" && (
@@ -336,7 +369,7 @@ export default function ProjectPage() {
               onClick={resetProject}
               className="flex items-center gap-1 text-xs px-3 py-1.5 rounded border hover:bg-gray-50 text-gray-600"
             >
-              <RefreshCw className="w-3 h-3" /> 重置
+              <RefreshCw className="w-3 h-3" /> {t("Reset")}
             </button>
           )}
         </div>
@@ -362,41 +395,43 @@ export default function ProjectPage() {
       {/* ── Step 1: Config ── */}
       {step === "config" && (
         <div className="flex flex-col gap-6">
-          {/* Mode selection */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => setProjectState((p) => ({ ...p, mode: "task" }))}
-              className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 transition-colors ${
-                !isSyllabus
-                  ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                  : "border-gray-200 hover:border-gray-300 dark:border-gray-600"
-              }`}
-            >
-              <FolderGit2 className={`w-5 h-5 ${!isSyllabus ? "text-blue-500" : "text-gray-400"}`} />
-              <div className="text-left">
-                <p className={`text-sm font-medium ${!isSyllabus ? "text-blue-700" : "text-gray-600"}`}>
-                  任务书生成
-                </p>
-                <p className="text-xs text-gray-400">生成任务书 + 代码仓库</p>
-              </div>
-            </button>
-            <button
-              onClick={() => setProjectState((p) => ({ ...p, mode: "syllabus" }))}
-              className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 transition-colors ${
-                isSyllabus
-                  ? "border-green-500 bg-green-50 dark:bg-green-900/20"
-                  : "border-gray-200 hover:border-gray-300 dark:border-gray-600"
-              }`}
-            >
-              <BookOpen className={`w-5 h-5 ${isSyllabus ? "text-green-500" : "text-gray-400"}`} />
-              <div className="text-left">
-                <p className={`text-sm font-medium ${isSyllabus ? "text-green-700" : "text-gray-600"}`}>
-                  课程大纲生成
-                </p>
-                <p className="text-xs text-gray-400">生成课程教学大纲文档</p>
-              </div>
-            </button>
-          </div>
+          {/* Mode selection — hidden when route pins mode */}
+          {!forcedMode && (
+            <div className="flex gap-3">
+              <button
+                onClick={() => setProjectState((p) => ({ ...p, mode: "task" }))}
+                className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 transition-colors ${
+                  !isSyllabus
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                    : "border-gray-200 hover:border-gray-300 dark:border-gray-600"
+                }`}
+              >
+                <FolderGit2 className={`w-5 h-5 ${!isSyllabus ? "text-blue-500" : "text-gray-400"}`} />
+                <div className="text-left">
+                  <p className={`text-sm font-medium ${!isSyllabus ? "text-blue-700" : "text-gray-600"}`}>
+                    {t("Task Generation")}
+                  </p>
+                  <p className="text-xs text-gray-400">{t("Generate task document + code repository")}</p>
+                </div>
+              </button>
+              <button
+                onClick={() => setProjectState((p) => ({ ...p, mode: "syllabus" }))}
+                className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 transition-colors ${
+                  isSyllabus
+                    ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                    : "border-gray-200 hover:border-gray-300 dark:border-gray-600"
+                }`}
+              >
+                <BookOpen className={`w-5 h-5 ${isSyllabus ? "text-green-500" : "text-gray-400"}`} />
+                <div className="text-left">
+                  <p className={`text-sm font-medium ${isSyllabus ? "text-green-700" : "text-gray-600"}`}>
+                    {t("Syllabus Generation")}
+                  </p>
+                  <p className="text-xs text-gray-400">{t("Generate course syllabus document")}</p>
+                </div>
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Upload card */}
@@ -406,15 +441,18 @@ export default function ProjectPage() {
               <Upload className="w-8 h-8 text-gray-400" />
               <div className="text-center">
                 <p className="font-medium text-sm">
-                  上传参考{isSyllabus ? "课程大纲" : "任务书"}
+                  {isSyllabus ? t("Upload Reference Syllabus") : t("Upload Reference Task Spec")}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">支持 .docx / .pdf</p>
+                <p className="text-xs text-gray-400 mt-1">{t("Supports .docx / .pdf")}</p>
               </div>
               {isUploading && <Loader2 className="w-5 h-5 animate-spin text-blue-500" />}
               {referenceStructure && !isUploading && (
                 <div className="flex items-center gap-1 text-green-600 text-xs">
                   <CheckCircle className="w-4 h-4" />
-                  已解析 {Object.keys(referenceStructure.sections || {}).length} 个章节
+                  {t("Parsed {count} sections").replace(
+                    "{count}",
+                    String(Object.keys(referenceStructure.sections || {}).length),
+                  )}
                 </div>
               )}
               {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
@@ -430,11 +468,11 @@ export default function ProjectPage() {
             {/* Theme input & options */}
             <div className="flex flex-col gap-3">
               <label className="text-sm font-medium">
-                {isSyllabus ? "新课程主题" : "新任务书主题"}
+                {isSyllabus ? t("New Course Topic") : t("New Task Topic")}
               </label>
               <textarea
                 className="border rounded-lg p-3 text-sm resize-none h-24 focus:ring-2 focus:ring-blue-300 outline-none"
-                placeholder={isSyllabus ? "例如：机器学习导论" : "例如：ROS 机器人导航暑期实习"}
+                placeholder={isSyllabus ? t("e.g. Intro to Machine Learning") : t("e.g. ROS robot navigation summer internship")}
                 value={theme}
                 onChange={(e) =>
                   setProjectState((p) => ({ ...p, theme: e.target.value }))
@@ -442,7 +480,7 @@ export default function ProjectPage() {
               />
               {/* KB selector */}
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 shrink-0">知识库：</label>
+                <label className="text-sm text-gray-600 shrink-0">{t("Knowledge Base:")}</label>
                 <select
                   className="flex-1 border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-300 outline-none"
                   value={selectedKb}
@@ -450,7 +488,7 @@ export default function ProjectPage() {
                     setProjectState((p) => ({ ...p, selectedKb: e.target.value }))
                   }
                 >
-                  <option value="">不使用知识库</option>
+                  <option value="">{t("Do not use knowledge base")}</option>
                   {kbs.map((kb) => (
                     <option key={kb} value={kb}>{kb}</option>
                   ))}
@@ -472,8 +510,28 @@ export default function ProjectPage() {
                     }`}
                   />
                 </div>
-                <span className="text-sm text-gray-600">开启网络搜索</span>
+                <span className="text-sm text-gray-600">{t("Enable web search")}</span>
               </label>
+
+              {/* Task mode only: syllabus reference selector */}
+              {!isSyllabus && syllabusSessions.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600 shrink-0">{t("Reference Syllabus:")}</label>
+                  <select
+                    className="flex-1 border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-300 outline-none"
+                    value={syllabusSessions.find((s) => s.content === syllabusMarkdown)?.id ?? ""}
+                    onChange={(e) => {
+                      const found = syllabusSessions.find((s) => s.id === e.target.value);
+                      setProjectState((p) => ({ ...p, syllabusMarkdown: found?.content ?? "" }));
+                    }}
+                  >
+                    <option value="">{t("Do not use syllabus reference")}</option>
+                    {syllabusSessions.map((s) => (
+                      <option key={s.id} value={s.id}>{s.theme}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Task mode only: difficulty + CLI tool */}
               {!isSyllabus && (
@@ -481,12 +539,16 @@ export default function ProjectPage() {
                   {/* Difficulty selector */}
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      代码难度
+                      {t("Code Difficulty")}
                     </label>
                     <div className="flex gap-2">
                       {(["low", "medium", "high"] as const).map((level) => {
-                        const labels = { low: "低难度", medium: "中等", high: "高难度" };
-                        const hints = { low: "≤10文件 / ≤3000行", medium: "≤25文件 / ≤7000行", high: "≤40文件 / ≤10000行" };
+                        const labels = { low: t("Low"), medium: t("Medium"), high: t("High") };
+                        const hints = {
+                          low: t("≤10 files / ≤3000 lines"),
+                          medium: t("≤25 files / ≤7000 lines"),
+                          high: t("≤40 files / ≤10000 lines"),
+                        };
                         return (
                           <button
                             key={level}
@@ -509,12 +571,12 @@ export default function ProjectPage() {
                   {/* CLI tool selector */}
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      代码生成工具
+                      {t("Code Generation Tool")}
                     </label>
                     <div className="flex gap-2">
                       {(["claude", "codex"] as const).map((tool) => {
-                        const labels = { claude: "Claude CLI", codex: "Codex CLI" };
-                        const hints  = { claude: "OAuth 认证（Claude Pro）", codex: "OpenAI Codex" };
+                        const labels = { claude: t("Claude CLI"), codex: t("Codex CLI") };
+                        const hints  = { claude: t("OAuth auth (Claude Pro)"), codex: t("OpenAI Codex") };
                         return (
                           <button
                             key={tool}
@@ -538,7 +600,7 @@ export default function ProjectPage() {
                   {cliTool === "codex" && (
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        OpenAI API Key（可选，留空则使用 login 认证）
+                        {t("OpenAI API Key (optional, leave blank to use login auth)")}
                       </label>
                       <input
                         type="password"
@@ -559,10 +621,13 @@ export default function ProjectPage() {
             <div className="border rounded-xl p-4 bg-gray-50 dark:bg-gray-800/50">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  章节识别结果
+                  {t("Section Recognition Result")}
                 </h3>
                 <span className="text-xs text-gray-400">
-                  {Object.keys(referenceStructure.sections || {}).length} 个章节 · 可编辑内容、删除或添加章节
+                  {t("{count} sections · Editable, deletable, or add sections").replace(
+                    "{count}",
+                    String(Object.keys(referenceStructure.sections || {}).length),
+                  )}
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -571,7 +636,8 @@ export default function ProjectPage() {
                   ...sectionOrder.filter((k) => referenceStructure.sections?.[k] !== undefined),
                   ...Object.keys(referenceStructure.sections || {}).filter((k) => !sectionOrder.includes(k)),
                 ].map((key) => {
-                  const label = sectionNames[key] ?? referenceStructure.sections?.[key]?.title ?? key;
+                  const nameKey = sectionNames[key];
+                  const label = nameKey ? t(nameKey) : referenceStructure.sections?.[key]?.title ?? key;
                   const sec = referenceStructure.sections?.[key];
                   const content = sec?.content ?? "";
                   const isEmpty = !content.trim();
@@ -584,11 +650,11 @@ export default function ProjectPage() {
                         }
                         <span className="text-xs font-medium text-gray-600 dark:text-gray-400 flex-1 truncate">
                           {label}
-                          {isEmpty && <span className="text-amber-400 ml-1">（未识别）</span>}
+                          {isEmpty && <span className="text-amber-400 ml-1">{t("(not recognized)")}</span>}
                         </span>
                         <button
                           type="button"
-                          title="删除此章节"
+                          title={t("Delete this section")}
                           onClick={() =>
                             setProjectState((p) => {
                               const newSections = { ...p.referenceStructure!.sections };
@@ -603,7 +669,7 @@ export default function ProjectPage() {
                       </div>
                       <textarea
                         className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs resize-none h-20 focus:ring-1 focus:ring-blue-300 outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
-                        placeholder={isEmpty ? "未识别到此章节，可手动填写参考内容..." : ""}
+                        placeholder={isEmpty ? t("Section not recognized — fill in manually...") : ""}
                         value={content}
                         onChange={(e) =>
                           setProjectState((p) => ({
@@ -626,7 +692,7 @@ export default function ProjectPage() {
                 <div className="md:col-span-2 flex gap-2 mt-1">
                   <input
                     type="text"
-                    placeholder="新章节名称（如：实验环境搭建）"
+                    placeholder={t("New section name (e.g. Lab Environment Setup)")}
                     value={newSectionTitle}
                     onChange={(e) => setNewSectionTitle(e.target.value)}
                     onKeyDown={(e) => {
@@ -653,7 +719,7 @@ export default function ProjectPage() {
                     }}
                     className="px-3 py-1.5 text-xs rounded-lg border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
                   >
-                    + 添加章节
+                    {t("+ Add Section")}
                   </button>
                 </div>
               </div>
@@ -667,7 +733,7 @@ export default function ProjectPage() {
               isSyllabus ? "bg-green-500 hover:bg-green-600" : "bg-blue-500 hover:bg-blue-600"
             }`}
           >
-            开始生成{isSyllabus ? "课程大纲" : "任务书"} <ChevronRight className="w-4 h-4" />
+            {isSyllabus ? t("Start Generating Syllabus") : t("Start Generating Task Spec")} <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -677,7 +743,7 @@ export default function ProjectPage() {
         <div className="flex gap-6 flex-1 min-h-0">
           {/* Left: chapter progress */}
           <div className="w-48 shrink-0">
-            <p className="text-sm font-medium mb-3 text-gray-700">章节进度</p>
+            <p className="text-sm font-medium mb-3 text-gray-700">{t("Chapter Progress")}</p>
             <ChapterProgress sections={taskSections} currentSection={currentSection} mode={mode} />
           </div>
 
@@ -687,7 +753,7 @@ export default function ProjectPage() {
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{taskContent}</ReactMarkdown>
             ) : (
               <div className="flex items-center gap-2 text-gray-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> 正在连接...
+                <Loader2 className="w-4 h-4 animate-spin" /> {t("Connecting...")}
               </div>
             )}
           </div>
@@ -703,16 +769,17 @@ export default function ProjectPage() {
           // 使用 taskSections（逐章节生成时保存的）
           const order = [...sectionOrder.filter((k) => taskSections[k]), ...allSectionKeys.filter((k) => !sectionOrder.includes(k) && taskSections[k])];
           for (const key of order) {
+            const nameKey = sectionNames[key];
             parsedSections.push({
               key,
-              title: sectionNames[key] ?? key,
+              title: nameKey ? t(nameKey) : key,
               content: taskSections[key] || "",
             });
           }
         }
         // 如果没有 taskSections，fallback 到整篇
         if (parsedSections.length === 0 && taskContent) {
-          parsedSections.push({ key: "full", title: "完整文档", content: taskContent });
+          parsedSections.push({ key: "full", title: t("Complete Document"), content: taskContent });
         }
 
         const reviewSelected = projectState.reviewSelectedSection || parsedSections[0]?.key || null;
@@ -732,7 +799,7 @@ export default function ProjectPage() {
           setProjectState((prev) => {
             const newSections = { ...prev.taskSections, [sectionKey]: newContent };
             const order = [...sectionOrder.filter((k) => newSections[k]), ...Object.keys(newSections).filter((k) => !sectionOrder.includes(k) && newSections[k])];
-            const suffix = isSyllabus ? "课程大纲" : "实习任务书";
+            const suffix = isSyllabus ? t("Syllabus Suffix") : t("Task Suffix");
             fullMd = `# ${prev.theme} — ${suffix}\n\n`;
             for (const k of order) {
               if (newSections[k]?.trim()) {
@@ -750,7 +817,7 @@ export default function ProjectPage() {
                 const currentState = projectState;
                 const newSections = { ...currentState.taskSections, [sectionKey]: newContent };
                 const order = [...sectionOrder.filter((k) => newSections[k]), ...Object.keys(newSections).filter((k) => !sectionOrder.includes(k) && newSections[k])];
-                const suffix = isSyllabus ? "课程大纲" : "实习任务书";
+                const suffix = isSyllabus ? t("Syllabus Suffix") : t("Task Suffix");
                 let md = `# ${currentState.theme} — ${suffix}\n\n`;
                 for (const k of order) {
                   if (newSections[k]?.trim()) {
@@ -794,11 +861,21 @@ export default function ProjectPage() {
             } else {
               const errText = await resp.text();
               console.error("Extract reflections failed:", resp.status, errText);
-              setReflectionResult({ rules: [`提炼失败: ${resp.status} ${errText.slice(0, 100)}`], total: 0 });
+              setReflectionResult({
+                rules: [
+                  t("Distill failed: {status} {detail}")
+                    .replace("{status}", String(resp.status))
+                    .replace("{detail}", errText.slice(0, 100)),
+                ],
+                total: 0,
+              });
             }
           } catch (e: any) {
             console.error("Extract reflections error:", e);
-            setReflectionResult({ rules: [`请求失败: ${e.message || e}`], total: 0 });
+            setReflectionResult({
+              rules: [t("Request failed: {msg}").replace("{msg}", String(e.message || e))],
+              total: 0,
+            });
           }
           setExtracting(false);
         };
@@ -829,7 +906,7 @@ export default function ProjectPage() {
               {/* Action bar */}
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {isSyllabus ? "课程大纲预览" : "任务书预览"}
+                  {isSyllabus ? t("Syllabus Preview") : t("Task Preview")}
                 </p>
                 <div className="flex gap-2">
                   {hasAnyChatHistory && (
@@ -839,30 +916,20 @@ export default function ProjectPage() {
                       className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border border-amber-300 text-amber-600 hover:bg-amber-50 disabled:opacity-50 transition-colors"
                     >
                       {extracting ? (
-                        <><Loader2 className="w-3 h-3 animate-spin" /> 提炼中...</>
+                        <><Loader2 className="w-3 h-3 animate-spin" /> {t("Distilling...")}</>
                       ) : (
-                        "提炼反思"
+                        t("Distill Reflections")
                       )}
                     </button>
                   )}
-                  <button onClick={() => downloadTask("md")}
+                  <button onClick={downloadTask}
                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50">
-                    <Download className="w-3.5 h-3.5" /> .md
+                    <Download className="w-3.5 h-3.5" /> {t("Download Word Document")}
                   </button>
-                  <button onClick={() => downloadTask("docx")}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50">
-                    <FileText className="w-3.5 h-3.5" /> .docx
-                  </button>
-                  {isSyllabus && (
-                    <button onClick={() => downloadTask("pdf")}
-                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border hover:bg-gray-50">
-                      <FileText className="w-3.5 h-3.5" /> .pdf
-                    </button>
-                  )}
                   {!isSyllabus && (
                     <button onClick={startCodeGeneration}
                       className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors">
-                      <FolderGit2 className="w-3.5 h-3.5" /> 生成代码仓库
+                      <FolderGit2 className="w-3.5 h-3.5" /> {t("Generate Code Repository")}
                     </button>
                   )}
                 </div>
@@ -873,7 +940,9 @@ export default function ProjectPage() {
                 <div className="mx-4 mt-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="text-sm font-semibold text-amber-700 dark:text-amber-300">
-                      反思提炼结果（已保存 {reflectionResult.rules.length} 条，全局共 {reflectionResult.total} 条）
+                      {t("Reflection Distill Result (saved {saved}, total {total})")
+                        .replace("{saved}", String(reflectionResult.rules.length))
+                        .replace("{total}", String(reflectionResult.total))}
                     </h4>
                     <button
                       onClick={() => setReflectionResult(null)}
@@ -892,7 +961,7 @@ export default function ProjectPage() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">未提炼到新的反思要点</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">{t("No new reflection points distilled")}</p>
                   )}
                 </div>
               )}
@@ -934,11 +1003,11 @@ export default function ProjectPage() {
 
           {/* Left 1/3: Agent log */}
           <div className="w-72 shrink-0 flex flex-col gap-2">
-            <p className="text-sm font-medium text-gray-700">Agent 操作日志</p>
+            <p className="text-sm font-medium text-gray-700">{t("Agent Operation Log")}</p>
             <div className="flex-1 overflow-y-auto border rounded-xl p-2 bg-gray-950 text-xs font-mono space-y-0.5">
               {agentLogs.length === 0 && step === "code_generating" && (
                 <div className="flex items-center gap-2 text-gray-500 p-2">
-                  <Loader2 className="w-3 h-3 animate-spin" /> 等待 Claude Agent...
+                  <Loader2 className="w-3 h-3 animate-spin" /> {t("Waiting for Claude Agent...")}
                 </div>
               )}
               {agentLogs.map((log, i) => {
@@ -969,8 +1038,8 @@ export default function ProjectPage() {
                 verifyPassed ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"
               }`}>
                 {verifyPassed
-                  ? <><CheckCircle className="w-4 h-4" /> 代码验证通过 — 可正常运行</>
-                  : <><AlertCircle className="w-4 h-4" /> 验证未完全通过，请查看日志</>}
+                  ? <><CheckCircle className="w-4 h-4" /> {t("Code verified — ready to run")}</>
+                  : <><AlertCircle className="w-4 h-4" /> {t("Verification incomplete, check logs")}</>}
               </div>
             )}
 
@@ -978,11 +1047,11 @@ export default function ProjectPage() {
             <div className="flex-1 overflow-y-auto border rounded-xl p-3">
               {step === "code_generating" && generatedFiles.length === 0 ? (
                 <div className="flex items-center gap-2 text-gray-400 text-sm">
-                  <Loader2 className="w-4 h-4 animate-spin" /> 正在生成文件...
+                  <Loader2 className="w-4 h-4 animate-spin" /> {t("Generating files...")}
                 </div>
               ) : (
                 <>
-                  <p className="text-xs font-medium text-gray-500 mb-2">生成文件树</p>
+                  <p className="text-xs font-medium text-gray-500 mb-2">{t("File Tree")}</p>
                   <FileTree nodes={generatedFiles} />
                 </>
               )}
@@ -991,7 +1060,7 @@ export default function ProjectPage() {
             {/* Coverage map */}
             {coverageMap && Object.keys(coverageMap).length > 0 && (
               <div className="border rounded-xl p-3">
-                <p className="text-xs font-medium text-gray-500 mb-2">需求覆盖率</p>
+                <p className="text-xs font-medium text-gray-500 mb-2">{t("Requirement Coverage")}</p>
                 <div className="space-y-1">
                   {Object.entries(coverageMap).map(([moduleId, files]) => (
                     <div key={moduleId} className="flex items-start gap-2 text-xs">
@@ -1018,13 +1087,13 @@ export default function ProjectPage() {
                   }}
                   className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
                 >
-                  <Download className="w-3.5 h-3.5" /> 下载代码 zip
+                  <Download className="w-3.5 h-3.5" /> {t("Download Code ZIP")}
                 </button>
                 <button
                   onClick={resetProject}
                   className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg border hover:bg-gray-50 text-gray-600"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> 新建项目
+                  <RefreshCw className="w-3.5 h-3.5" /> {t("New Project")}
                 </button>
               </div>
             )}

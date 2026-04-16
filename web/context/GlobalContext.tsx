@@ -264,6 +264,8 @@ interface ProjectState {
   codexApiKey: string;
   uploadedFile: File | null;
   referenceStructure: Record<string, any> | null;
+  // Syllabus → task linkage
+  syllabusMarkdown: string;
   // Task generation
   taskContent: string;
   taskSections: Record<string, string>;
@@ -511,6 +513,7 @@ const DEFAULT_PROJECT_STATE: ProjectState = {
   codexApiKey: "",
   uploadedFile: null,
   referenceStructure: null,
+  syllabusMarkdown: "",
   taskContent: "",
   taskSections: {},
   currentSection: null,
@@ -694,16 +697,16 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
 
   // --- Sidebar Customization State ---
   const DEFAULT_DESCRIPTION = "✨ Data Intelligence Lab @ HKU";
+  const HIDDEN_NAV_ITEMS = ["/solver", "/guide"];
   const DEFAULT_NAV_ORDER: SidebarNavOrder = {
     start: ["/", "/history", "/knowledge", "/knowledge/graph", "/notebook"],
     learnResearch: [
       "/question",
-      "/solver",
-      "/guide",
       "/ideagen",
       "/research",
       "/co_writer",
-      "/project",
+      "/project/syllabus",
+      "/project/case",
     ],
   };
 
@@ -723,13 +726,21 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
             setSidebarDescriptionState(data.description);
           }
           if (data.nav_order) {
-            // Merge: ensure new default items not in saved order are appended
+            // Merge: ensure new default items not in saved order are appended,
+            // and remove hidden/deprecated items from both groups
             const saved = data.nav_order as SidebarNavOrder;
             const allSaved = [...(saved.start || []), ...(saved.learnResearch || [])];
-            const missing = DEFAULT_NAV_ORDER.start.filter((p) => !allSaved.includes(p));
-            if (missing.length > 0) {
-              saved.start = [...(saved.start || []), ...missing];
+            const missingStart = DEFAULT_NAV_ORDER.start.filter((p) => !allSaved.includes(p));
+            if (missingStart.length > 0) {
+              saved.start = [...(saved.start || []), ...missingStart];
             }
+            const missingLearnResearch = DEFAULT_NAV_ORDER.learnResearch.filter((p) => !allSaved.includes(p));
+            if (missingLearnResearch.length > 0) {
+              saved.learnResearch = [...(saved.learnResearch || []), ...missingLearnResearch];
+            }
+            // Remove hidden/deprecated items
+            saved.start = (saved.start || []).filter((p) => !HIDDEN_NAV_ITEMS.includes(p));
+            saved.learnResearch = (saved.learnResearch || []).filter((p) => !HIDDEN_NAV_ITEMS.includes(p));
             setSidebarNavOrderState(saved);
           }
         }
@@ -2262,6 +2273,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
           web_search: state.webSearchEnabled,
           session_id: state.sessionId,
           mode: state.mode,
+          syllabus_markdown: state.syllabusMarkdown || "",
         }),
       );
     };
@@ -2300,7 +2312,6 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
             ...prev,
             step: "task_review",
             sessionId: data.session_id,
-            taskMdPath: data.task_md_path,
           }));
           break;
         case "error":

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiUrl } from "@/lib/api";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import {
   FolderGit2,
   Trash2,
@@ -25,17 +26,17 @@ interface SessionSummary {
 
 const STATUS_CONFIG: Record<
   SessionSummary["status"],
-  { label: string; color: string; spin: boolean }
+  { labelKey: string; color: string; spin: boolean }
 > = {
-  init:            { label: "初始化",     color: "text-gray-400",   spin: false },
-  task_generating: { label: "生成任务书中", color: "text-blue-400",   spin: true  },
-  task_generated:  { label: "任务书就绪",  color: "text-yellow-500", spin: false },
-  code_generating: { label: "生成代码中",  color: "text-purple-400", spin: true  },
-  complete:        { label: "已完成",     color: "text-green-400",  spin: false },
+  init:            { labelKey: "Status: Init",             color: "text-gray-400",   spin: false },
+  task_generating: { labelKey: "Status: Task Generating",  color: "text-blue-400",   spin: true  },
+  task_generated:  { labelKey: "Status: Task Generated",   color: "text-yellow-500", spin: false },
+  code_generating: { labelKey: "Status: Code Generating",  color: "text-purple-400", spin: true  },
+  complete:        { labelKey: "Status: Complete",         color: "text-green-400",  spin: false },
 };
 
-function formatDate(ts: number) {
-  return new Date(ts * 1000).toLocaleString("zh-CN", {
+function formatDate(ts: number, locale: string) {
+  return new Date(ts * 1000).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -46,6 +47,7 @@ function formatDate(ts: number) {
 
 export default function ProjectHistoryPage() {
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export default function ProjectHistoryPage() {
   }, []);
 
   async function handleDelete(sessionId: string) {
-    if (!confirm("确认删除此项目？此操作不可撤销。")) return;
+    if (!confirm(t("Confirm delete this project? This cannot be undone."))) return;
     setDeleting(sessionId);
     try {
       const r = await fetch(apiUrl(`/api/v1/project/sessions/${sessionId}`), {
@@ -69,7 +71,7 @@ export default function ProjectHistoryPage() {
       if (r.ok) {
         setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
       } else {
-        alert("删除失败：" + (await r.text()));
+        alert(t("Delete failed: {detail}").replace("{detail}", await r.text()));
       }
     } finally {
       setDeleting(null);
@@ -99,26 +101,26 @@ export default function ProjectHistoryPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <FolderGit2 className="w-6 h-6 text-blue-400" />
-          <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-100">历史项目</h1>
+          <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-100">{t("Project History")}</h1>
           <span className="text-sm text-gray-400 ml-1">({sessions.length})</span>
         </div>
         <button
           onClick={() => router.push("/project")}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
         >
-          + 新建项目
+          + {t("New Project")}
         </button>
       </div>
 
       {sessions.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-4 text-gray-400">
           <FolderGit2 className="w-16 h-16 opacity-20" />
-          <p>暂无历史项目</p>
+          <p>{t("No history projects yet")}</p>
           <button
             onClick={() => router.push("/project")}
             className="text-blue-400 hover:underline text-sm"
           >
-            创建第一个项目 →
+            {t("Create first project →")}
           </button>
         </div>
       ) : (
@@ -135,7 +137,7 @@ export default function ProjectHistoryPage() {
                 <div className="flex items-start justify-between gap-4 mb-2">
                   <div className="flex-1 min-w-0">
                     <h2 className="text-gray-800 dark:text-gray-100 font-medium truncate">
-                      {session.theme || "（无主题）"}
+                      {session.theme || t("(untitled)")}
                     </h2>
                     <p className="text-gray-400 text-xs mt-0.5 font-mono truncate">
                       {session.session_id}
@@ -143,14 +145,18 @@ export default function ProjectHistoryPage() {
                   </div>
                   <div className={`flex items-center gap-1 text-sm shrink-0 ${cfg.color}`}>
                     <StatusIcon className={`w-4 h-4 ${cfg.spin ? "animate-spin" : ""}`} />
-                    <span>{cfg.label}</span>
+                    <span>{t(cfg.labelKey)}</span>
                   </div>
                 </div>
 
                 {/* Timestamps */}
                 <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
-                  <span>创建：{formatDate(session.created_at)}</span>
-                  <span>更新：{formatDate(session.updated_at)}</span>
+                  <span>
+                    {t("Created: {date}").replace("{date}", formatDate(session.created_at, i18n.language))}
+                  </span>
+                  <span>
+                    {t("Updated: {date}").replace("{date}", formatDate(session.updated_at, i18n.language))}
+                  </span>
                 </div>
 
                 {/* Actions */}
@@ -161,7 +167,7 @@ export default function ProjectHistoryPage() {
                       download
                       className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg text-xs transition-colors"
                     >
-                      <Download className="w-3 h-3" /> 下载任务书
+                      <Download className="w-3 h-3" /> {t("Download Task Spec")}
                     </a>
                   )}
                   {session.status === "complete" && (
@@ -170,7 +176,7 @@ export default function ProjectHistoryPage() {
                       download
                       className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs transition-colors"
                     >
-                      <Download className="w-3 h-3" /> 下载代码 zip
+                      <Download className="w-3 h-3" /> {t("Download Code ZIP")}
                     </a>
                   )}
                   <button
@@ -183,7 +189,7 @@ export default function ProjectHistoryPage() {
                     ) : (
                       <Trash2 className="w-3 h-3" />
                     )}
-                    删除
+                    {t("Delete")}
                   </button>
                 </div>
               </div>

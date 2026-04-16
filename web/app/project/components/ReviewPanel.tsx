@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Loader2, CheckCircle, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useTranslation } from "react-i18next";
 import { wsUrl } from "@/lib/api";
 
 interface ChatMessage {
@@ -30,6 +31,7 @@ export default function ReviewPanel({
   onChatUpdate,
   onAcceptRevision,
 }: Props) {
+  const { t } = useTranslation();
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamBuffer, setStreamBuffer] = useState("");
@@ -109,7 +111,7 @@ export default function ReviewPanel({
           if (startIdx !== -1 && endIdx !== -1) {
             displayContent =
               displayContent.substring(0, startIdx).trim() +
-              "\n\n*[修改建议已生成，请点击下方按钮查看并接受]*";
+              `\n\n*${t("[Modification suggestion generated, click button below to review and accept]")}*`;
           }
 
           const finalHistory: ChatMessage[] = [
@@ -127,7 +129,10 @@ export default function ReviewPanel({
           setStreamBuffer("");
           const errorHistory: ChatMessage[] = [
             ...updatedHistory,
-            { role: "assistant", content: `[错误] ${data.content}` },
+            {
+              role: "assistant",
+              content: t("[Error] {msg}").replace("{msg}", String(data.content)),
+            },
           ];
           onChatUpdate(sectionKey, errorHistory);
           ws.close();
@@ -146,7 +151,7 @@ export default function ReviewPanel({
       setStreaming(false);
       setStreamBuffer("");
     }
-  }, [input, streaming, sectionKey, sectionTitle, sectionContent, chatHistory, onChatUpdate]);
+  }, [input, streaming, sectionKey, sectionTitle, sectionContent, chatHistory, onChatUpdate, t]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -173,10 +178,10 @@ export default function ReviewPanel({
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate">
-          审阅：{sectionTitle}
+          {t("Review: {section}").replace("{section}", sectionTitle)}
         </h3>
         <p className="text-xs text-gray-400 mt-0.5">
-          输入修改意见，AI 将针对此章节提出修改建议
+          {t("Enter modification suggestions for this section")}
         </p>
       </div>
 
@@ -184,7 +189,10 @@ export default function ReviewPanel({
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {chatHistory.length === 0 && !streaming && (
           <div className="text-center text-gray-400 text-xs py-8">
-            对「{sectionTitle}」章节输入修改意见开始对话
+            {t("Enter modification suggestions for 「{section}」 to start dialogue").replace(
+              "{section}",
+              sectionTitle,
+            )}
           </div>
         )}
 
@@ -214,13 +222,13 @@ export default function ReviewPanel({
                   className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white rounded-lg text-xs font-medium hover:bg-green-600 transition-colors"
                 >
                   <CheckCircle className="w-3.5 h-3.5" />
-                  接受修改
+                  {t("Accept Changes")}
                 </button>
               )}
               {msg.role === "assistant" && msg.accepted && (
                 <div className="mt-2 flex items-center gap-1.5 text-green-600 dark:text-green-400 text-xs">
                   <CheckCircle className="w-3.5 h-3.5" />
-                  已应用修改
+                  {t("Changes Applied")}
                 </div>
               )}
             </div>
@@ -240,7 +248,7 @@ export default function ReviewPanel({
               ) : (
                 <div className="flex items-center gap-2 text-gray-400">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  思考中...
+                  {t("Thinking...")}
                 </div>
               )}
             </div>
@@ -258,7 +266,7 @@ export default function ReviewPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入修改意见... (Enter 发送，Shift+Enter 换行)"
+            placeholder={t("Enter modification suggestion... (Enter to send, Shift+Enter for newline)")}
             rows={2}
             disabled={streaming}
             className="flex-1 resize-none rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-300 outline-none disabled:opacity-50"

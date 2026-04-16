@@ -6,7 +6,7 @@ TaskGenerator — 逐章节流式生成新任务书 / 课程大纲。
 1. 可选 RAG 检索相关知识
 2. 可选 Web 搜索获取最新资料
 3. 按固定顺序逐章节流式生成
-4. 导出 Markdown + docx（大纲模式额外导出 PDF）
+4. 导出格式化 .docx 文档
 """
 
 import asyncio
@@ -115,12 +115,16 @@ class TaskGenerator:
         kb_name: str | None,
         web_search: bool,
         ws_callback: Callable,
+        syllabus_markdown: str = "",
     ) -> dict[str, Any]:
         """
         生成完整任务书文档。
 
+        Args:
+            syllabus_markdown: 已生成的课程大纲内容（Markdown），作为任务书生成的参考输入。
+
         Returns:
-            {"content": full_md, "md_path": str, "docx_path": str}
+            {"content": full_md, "docx_path": str}
         """
         # Step 1: RAG 检索
         if kb_name:
@@ -146,7 +150,15 @@ class TaskGenerator:
         # Step 4: 逐章节流式生成
         sections: dict[str, str] = {}
         base_system = self._prompts.get("system", "You are a helpful assistant.")
-        system_prompt = f"{base_system}\n\n{reflection_text}" if reflection_text else base_system
+        system_parts = [base_system]
+        if reflection_text:
+            system_parts.append(reflection_text)
+        if syllabus_markdown and self.mode == "task":
+            system_parts.append(
+                "以下是本课程的教学大纲，请以此为基础和参考，生成与大纲目标一致的实习任务书：\n\n"
+                + syllabus_markdown[:3000]
+            )
+        system_prompt = "\n\n".join(system_parts)
         section_prompts = self._prompts.get("section_prompts", {})
 
         # 动态章节顺序：优先使用 reference_structure 中的章节（用户可增删）
@@ -190,6 +202,7 @@ class TaskGenerator:
                 "web_context": web_context[:1000] if web_context else "（无）",
                 "reference_content": reference_content[:800] if reference_content else "（无参考内容）",
                 "modules_content": sections.get("modules", "")[:500],
+                "syllabus_context": syllabus_markdown[:2000] if syllabus_markdown else "（无课程大纲参考）",
             })
             prompt = prompt_template.format_map(format_kwargs)
 
@@ -217,22 +230,12 @@ class TaskGenerator:
 
         # Step 4: 组合并导出（按实际生成的章节顺序）
         full_md = self._assemble_markdown(theme, sections, section_order)
-        md_path = self._save_markdown(full_md)
         docx_path = self._export_docx(full_md)
 
-        result = {
+        return {
             "content": full_md,
-            "md_path": str(md_path),
             "docx_path": str(docx_path),
         }
-
-        # 课程大纲模式：额外导出 PDF
-        if self.mode == "syllabus":
-            pdf_path = self._convert_docx_to_pdf(docx_path)
-            if pdf_path:
-                result["pdf_path"] = str(pdf_path)
-
-        return result
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -282,68 +285,19 @@ class TaskGenerator:
                 parts.append("\n\n---\n\n")
         return "".join(parts)
 
-    def _save_markdown(self, content: str) -> Path:
-        md_path = self.output_dir / "generated_task.md"
-        md_path.write_text(content, encoding="utf-8")
-        return md_path
-
     def _export_docx(self, markdown_content: str) -> Path:
-        """将 Markdown 内容导出为 .docx 文件（使用 python-docx）。"""
-        docx_path = self.output_dir / "generated_task.docx"
-        try:
-            from docx import Document
-            from docx.shared import Pt
+        """将 Markdown 内容导出为格式化 .docx 文件。"""
+        from src.agents.project.markdown_to_docx import convert_markdown_to_docx
 
-            doc = Document()
-            for line in markdown_content.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("# "):
-                    doc.add_heading(stripped[2:], level=1)
-                elif stripped.startswith("## "):
-                    doc.add_heading(stripped[3:], level=2)
-                elif stripped.startswith("### "):
-                    doc.add_heading(stripped[4:], level=3)
-                elif stripped == "---":
-                    doc.add_paragraph("─" * 40)
-                elif stripped:
-                    doc.add_paragraph(stripped)
-            doc.save(str(docx_path))
+        suffix = "课程大纲" if self.mode == "syllabus" else "实习任务书"
+        docx_path = self.output_dir / f"generated_{suffix}.docx"
+        try:
+            convert_markdown_to_docx(markdown_content, docx_path)
+            logger.info(f"docx exported: {docx_path}")
         except Exception as e:
             logger.warning(f"docx export failed: {e}. Saving empty placeholder.")
             docx_path.write_bytes(b"")
-
         return docx_path
-
-
-    def _convert_docx_to_pdf(self, docx_path: Path) -> Path | None:
-        """将 docx 转换为 PDF（优先 LibreOffice，回退 docx2pdf）。"""
-        pdf_path = docx_path.with_suffix(".pdf")
-        # 尝试 LibreOffice
-        try:
-            import subprocess
-            result = subprocess.run(
-                ["libreoffice", "--headless", "--convert-to", "pdf",
-                 "--outdir", str(docx_path.parent), str(docx_path)],
-                capture_output=True, text=True, timeout=60,
-            )
-            if pdf_path.exists():
-                logger.info(f"PDF exported via LibreOffice: {pdf_path}")
-                return pdf_path
-        except Exception as e:
-            logger.debug(f"LibreOffice conversion failed: {e}")
-
-        # 尝试 docx2pdf
-        try:
-            from docx2pdf import convert
-            convert(str(docx_path), str(pdf_path))
-            if pdf_path.exists():
-                logger.info(f"PDF exported via docx2pdf: {pdf_path}")
-                return pdf_path
-        except Exception as e:
-            logger.debug(f"docx2pdf conversion failed: {e}")
-
-        logger.warning("PDF conversion not available (install LibreOffice or docx2pdf)")
-        return None
 
 
 __all__ = [

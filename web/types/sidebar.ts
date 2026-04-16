@@ -28,10 +28,15 @@ export const DEFAULT_NAV_ORDER: SidebarNavOrder = {
   start: ["/", "/history", "/knowledge", "/knowledge/graph", "/notebook"],
   learnResearch: [
     "/question",
-    "/solver",
-    "/guide",
     "/ideagen",
     "/research",
     "/co_writer",
+    "/project/syllabus",
+    "/project/case",
   ],
 };
+
+/**
+ * Items that should never appear in the sidebar (hidden features)
+ */
+export const HIDDEN_NAV_ITEMS: string[] = ["/solver", "/guide"];
