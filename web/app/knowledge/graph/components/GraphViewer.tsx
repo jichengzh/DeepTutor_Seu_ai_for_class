@@ -1,40 +1,50 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import cytoscape, { type Core } from "cytoscape";
 
-// ── Obsidian-inspired color palette ─────────────────────────────────────────
-// Level 1 (chapters): large purple nodes — prominent hub
-// Level 2 (sections): medium teal nodes — satellite
+// ── Book-color palette ───────────────────────────────────────────────────────
+// Each book (source_file) gets a unique hue.
+// L1 (chapter) nodes: deep/saturated shade of that hue  — round-rectangle
+// L2 (section) nodes: lighter tint of the same hue      — ellipse
+//
+// Colors are designed to look good on the dark (#1a1a2e) background.
 
-const LEVEL_STYLE = {
-  1: {
-    bg: "#7c3aed",       // violet-700 — Obsidian-purple hub
-    border: "#6d28d9",
-    textSize: "14px",
-    fontWeight: 700,
-    shape: "round-rectangle" as const,
-  },
-  2: {
-    bg: "#0891b2",       // cyan-600 — knowledge node
-    border: "#0e7490",
-    textSize: "11px",
-    fontWeight: 500,
-    shape: "ellipse" as const,
-  },
-};
+const BOOK_PALETTE: Array<{ l1bg: string; l1border: string; l2bg: string; l2border: string; label: string }> = [
+  { l1bg: "#7c3aed", l1border: "#6d28d9", l2bg: "#a78bfa", l2border: "#7c3aed", label: "#c4b5fd" }, // violet
+  { l1bg: "#0891b2", l1border: "#0e7490", l2bg: "#22d3ee", l2border: "#0891b2", label: "#67e8f9" }, // cyan
+  { l1bg: "#b45309", l1border: "#92400e", l2bg: "#fbbf24", l2border: "#b45309", label: "#fde68a" }, // amber
+  { l1bg: "#15803d", l1border: "#166534", l2bg: "#4ade80", l2border: "#15803d", label: "#86efac" }, // green
+  { l1bg: "#be123c", l1border: "#9f1239", l2bg: "#fb7185", l2border: "#be123c", label: "#fda4af" }, // rose
+  { l1bg: "#0369a1", l1border: "#075985", l2bg: "#38bdf8", l2border: "#0369a1", label: "#7dd3fc" }, // sky
+  { l1bg: "#7e22ce", l1border: "#6b21a8", l2bg: "#c084fc", l2border: "#7e22ce", label: "#e9d5ff" }, // purple
+  { l1bg: "#b91c1c", l1border: "#991b1b", l2bg: "#f87171", l2border: "#b91c1c", label: "#fca5a5" }, // red
+  { l1bg: "#0f766e", l1border: "#115e59", l2bg: "#2dd4bf", l2border: "#0f766e", label: "#99f6e4" }, // teal
+  { l1bg: "#a16207", l1border: "#854d0e", l2bg: "#facc15", l2border: "#a16207", label: "#fef08a" }, // yellow
+];
 
-const DEFAULT_STYLE = {
-  bg: "#64748b",
-  border: "#475569",
-  textSize: "10px",
-  fontWeight: 400,
-  shape: "ellipse" as const,
-};
+const FALLBACK_COLORS = { l1bg: "#64748b", l1border: "#475569", l2bg: "#94a3b8", l2border: "#64748b", label: "#cbd5e1" };
 
-function styleFor(level: number) {
-  return LEVEL_STYLE[level as keyof typeof LEVEL_STYLE] || DEFAULT_STYLE;
+/** Assign a palette index to each unique source_file, deterministically. */
+function buildBookColorMap(nodes: GraphNode[]): Map<string, number> {
+  const books = Array.from(new Set(nodes.map((n) => n.source_file).filter(Boolean)));
+  const map = new Map<string, number>();
+  books.forEach((b, i) => map.set(b, i % BOOK_PALETTE.length));
+  return map;
+}
+
+function styleFor(level: number, sourceFile: string, bookColorMap: Map<string, number>) {
+  const idx = bookColorMap.get(sourceFile);
+  const palette = idx !== undefined ? BOOK_PALETTE[idx] : FALLBACK_COLORS;
+  return {
+    bg: level === 1 ? palette.l1bg : palette.l2bg,
+    border: level === 1 ? palette.l1border : palette.l2border,
+    labelColor: palette.label,
+    textSize: level === 1 ? "14px" : "11px",
+    fontWeight: level === 1 ? 700 : 500,
+    shape: (level === 1 ? "round-rectangle" : "ellipse") as "round-rectangle" | "ellipse",
+  };
 }
 
 function nodeSize(level: number, itemCount: number): number {
@@ -51,6 +61,7 @@ interface GraphNode {
   item_count: number;
   body_preview: string;
   key_topics: string[];
+  source_file: string;
 }
 
 interface GraphEdge {
@@ -166,8 +177,8 @@ function stripBoilerplate(text: string): string {
 
 // ── Build cytoscape element descriptor for a node ───────────────────────────
 
-function nodeElement(node: GraphNode) {
-  const s = styleFor(node.level);
+function nodeElement(node: GraphNode, bookColorMap: Map<string, number>) {
+  const s = styleFor(node.level, node.source_file, bookColorMap);
   // Backend now sends clean titles; stripBoilerplate is a safety net for stale cache
   const label = stripBoilerplate(node.title) || node.title;
   return {
@@ -179,9 +190,11 @@ function nodeElement(node: GraphNode) {
       itemCount: node.item_count,
       bodyPreview: node.body_preview,
       keyTopics: node.key_topics,
+      sourceFile: node.source_file,
       size: nodeSize(node.level, node.item_count),
       bgColor: s.bg,
       borderColor: s.border,
+      labelColor: s.labelColor,
       textSize: s.textSize,
       fontWeight: s.fontWeight,
       shape: s.shape,
@@ -210,10 +223,10 @@ const CY_STYLE: cytoscape.Stylesheet[] = [
       "border-width": (ele: any) => (ele.data("level") === 1 ? 3 : 2),
       "border-color": "data(borderColor)",
       "border-opacity": 0.9,
-      color: "#ffffff",
+      color: "data(labelColor)",
       "text-outline-color": "data(borderColor)",
       "text-outline-width": 1,
-      "text-outline-opacity": 0.7,
+      "text-outline-opacity": 0.6,
       shape: "data(shape)",
       "overlay-opacity": 0,
       "transition-property": "border-width, border-color, width, height, background-opacity",
@@ -305,6 +318,18 @@ export default function GraphViewer({
   const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
+  // Book → palette index map, rebuilt when data changes
+  const bookColorMap = useMemo(() => buildBookColorMap(data?.nodes ?? []), [data]);
+  // Legend: unique books visible in current render
+  const bookLegend = useMemo(() => {
+    const books = Array.from(new Set((data?.nodes ?? []).map((n) => n.source_file).filter(Boolean)));
+    return books.map((b) => {
+      const idx = bookColorMap.get(b) ?? 0;
+      const palette = BOOK_PALETTE[idx % BOOK_PALETTE.length];
+      return { name: b, color: palette.l1bg, textColor: palette.label };
+    });
+  }, [data, bookColorMap]);
+
   // Wait for container to have non-zero dimensions before init
   useEffect(() => {
     const el = containerRef.current;
@@ -337,7 +362,7 @@ export default function GraphViewer({
     onVisibleCountChange?.(visibleNodes.length);
 
     const elements = [
-      ...visibleNodes.map(nodeElement),
+      ...visibleNodes.map((n) => nodeElement(n, bookColorMap)),
       ...allEdges.map((edge, i) => ({
         data: {
           id: `e${i}`,
@@ -418,7 +443,7 @@ export default function GraphViewer({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, ready]);
+  }, [data, ready, bookColorMap]);
 
   // ── Incremental filter update: add/remove nodes without rebuilding ─────────
   useEffect(() => {
@@ -452,7 +477,7 @@ export default function GraphViewer({
     // Add new nodes, using cached positions when available
     if (toAdd.length > 0) {
       const newElems: any[] = toAdd.map((node) => {
-        const el = nodeElement(node);
+        const el = nodeElement(node, bookColorMap);
         const cached = positionCacheRef.current.get(node.id);
         return cached ? { ...el, position: cached } : el;
       });
@@ -511,7 +536,7 @@ export default function GraphViewer({
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [levelFilter]);
+  }, [levelFilter, bookColorMap]);
 
   // ── Selected node highlight ───────────────────────────────────────────────
   useEffect(() => {
@@ -544,21 +569,31 @@ export default function GraphViewer({
         }}
       />
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-slate-900/80 backdrop-blur-sm border border-slate-700/60 rounded-xl px-4 py-2.5 flex gap-5 text-xs shadow-lg">
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-3.5 h-3 rounded-sm" style={{ backgroundColor: "#7c3aed" }} />
-          <span className="text-slate-300">{t("Chapter")}</span>
+      {/* Legend — one entry per book/source_file */}
+      {bookLegend.length > 0 && (
+        <div className="absolute bottom-4 left-4 bg-slate-900/80 backdrop-blur-sm border border-slate-700/60 rounded-xl px-3 py-2 flex flex-col gap-1.5 text-xs shadow-lg max-w-xs">
+          <p className="text-slate-400 font-semibold mb-0.5 tracking-wide uppercase" style={{ fontSize: "10px" }}>
+            {t("Source")}
+          </p>
+          {bookLegend.map(({ name, color, textColor }) => (
+            <div key={name} className="flex items-center gap-2 min-w-0">
+              {/* L1 chip */}
+              <span className="inline-block w-3.5 h-3 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+              <span
+                className="truncate leading-tight"
+                style={{ color: textColor, maxWidth: "180px" }}
+                title={name}
+              >
+                {name}
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2 mt-1 pt-1 border-t border-slate-700/60">
+            <span className="inline-block w-6 h-px shrink-0" style={{ backgroundColor: "#94a3b8" }} />
+            <span className="text-slate-400">{t("Related")}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-3.5 h-3 rounded-full" style={{ backgroundColor: "#0891b2" }} />
-          <span className="text-slate-300">{t("Section")}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-6 h-px" style={{ backgroundColor: "#a78bfa" }} />
-          <span className="text-slate-300">{t("Related")}</span>
-        </div>
-      </div>
+      )}
 
       {/* Hover tooltip */}
       {tooltipNode && (
@@ -569,7 +604,7 @@ export default function GraphViewer({
           <div className="flex items-center gap-2 mb-2">
             <span
               className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: styleFor(tooltipNode.level).bg }}
+              style={{ backgroundColor: styleFor(tooltipNode.level, tooltipNode.source_file, bookColorMap).bg }}
             />
             <h3 className="font-semibold text-sm text-white leading-tight">
               {stripBoilerplate(tooltipNode.title)}

@@ -35,6 +35,7 @@ interface GraphNode {
   item_count: number;
   body_preview: string;
   key_topics: string[];
+  source_file: string;
 }
 
 interface GraphEdge {
