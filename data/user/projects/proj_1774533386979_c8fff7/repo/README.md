@@ -1,21 +1,21 @@
-# 无人机智能感知与自主导航系统开发实习
+# 自动驾驶小车智能感知与自主导航系统开发实习
 
-基于 ROS2 Humble + PyTorch + TensorRT 的无人机全栈感知导航系统，运行于 NVIDIA Jetson Orin Nano（JetPack 5.1.2）。
+基于 ROS2 Humble + PyTorch + TensorRT 的自动驾驶小车全栈感知导航系统，运行于 NVIDIA Jetson Orin Nano（JetPack 5.1.2）。
 
 ---
 
 ## 项目介绍
 
-本项目模拟真实无人机开发实习场景，覆盖从硬件集成、感知模型训练、边缘部署到多机协同和自主避障的完整工程链路：
+本项目模拟真实自动驾驶小车开发实习场景，覆盖从硬件集成、感知模型训练、边缘部署到多车协同和自主避障的完整工程链路：
 
 | 模块 | 功能 | 关键指标 |
 |------|------|----------|
 | module1_hardware | 传感器集成、PTP时间同步、AprilTag标定 | 残差≤0.018m, 时偏≤12μs |
 | module2_training | YOLOv8数据集构建与端到端训练 | 延迟≤85ms@1080p |
 | module3_perception | LiteNavNet边缘推理、TensorRT加速 | /perception/obstacle_array |
-| module4_collaborative | 多机协同、故障注入、SLAM重定位 | 重定位误差＜0.3m |
+| module4_collaborative | 多车协同、故障注入、SLAM重定位 | 重定位误差＜0.3m |
 | module5_mapping | 激光-相机对齐、语义建图、OctoMap | ATE≤0.14m, IoU≥76.3% |
-| module6_avoidance | TEB规划、TTC预测、安全飞控闭环 | 避障≥99.2%, 响应≤142ms |
+| module6_avoidance | TEB规划、TTC预测、安全行车控制闭环 | 避障≥99.2%, 响应≤142ms |
 
 ---
 
@@ -32,8 +32,8 @@
 
 ```bash
 # 1. 克隆仓库
-git clone <repo_url> drone_nav
-cd drone_nav
+git clone <repo_url> auto_car_nav
+cd auto_car_nav
 
 # 2. 创建并激活虚拟环境
 python3.10 -m venv .venv
@@ -81,7 +81,7 @@ python src/module3_perception.py
   通过率:   100.0% (<85ms)
 ```
 
-### 模块6：安全飞控验证
+### 模块6：安全行车控制验证
 ```bash
 python src/module6_avoidance.py
 ```
@@ -104,7 +104,7 @@ pytest tests/test_modules.py -v
 ## 项目结构说明
 
 ```
-drone_nav/
+auto_car_nav/
 ├── README.md                    # 本文档
 ├── requirements.txt             # Python依赖（含版本号）
 ├── PLAN.md                      # 项目计划书
@@ -112,9 +112,9 @@ drone_nav/
 │   ├── module1_hardware.py      # 硬件集成与嵌入式部署
 │   ├── module2_training.py      # 数据采集与模型训练
 │   ├── module3_perception.py    # 轻量化感知算法
-│   ├── module4_collaborative.py # 多机协同与鲁棒性测试
+│   ├── module4_collaborative.py # 多车协同与鲁棒性测试
 │   ├── module5_mapping.py       # 时空对齐与语义建图
-│   └── module6_avoidance.py     # 避障决策与飞控验证
+│   └── module6_avoidance.py     # 避障决策与行车控制验证
 ├── tests/
 │   └── test_modules.py          # 全模块单元测试（pytest）
 └── scripts/
@@ -142,8 +142,8 @@ drone_nav/
 - `TensorRTOptimizer`: INT8 TensorRT引擎构建与推理
 - `PerceptionNode`: 发布`/perception/obstacle_array`的ROS2节点
 
-### module4_collaborative — 多机协同与鲁棒性测试
-- `MQTTBrokerSimulator`: MQTT多机通信总线
+### module4_collaborative — 多车协同与鲁棒性测试
+- `MQTTBrokerSimulator`: MQTT多车通信总线
 - `IMURadarFusion`: EKF融合IMU+雷达（视觉失效备份）
 - `SLAMRelocalizer`: ORB-SLAM3/RTAB-Map重定位接口
 - `FaultInjector`: 故障注入与MTTF/MTTR计算
@@ -155,7 +155,7 @@ drone_nav/
 - `SemanticMapper`: 语义标签融合与mIoU计算
 - `OctoMapBuilder`: 语义OctoMap构建（体积≤85MB）
 
-### module6_avoidance — 自主避障决策与安全飞控
+### module6_avoidance — 自主避障决策与安全行车控制
 - `TEBPlannerConfig`: TEB局部规划器参数配置（加速度≤1.4g）
 - `TTCPredictor`: 碰撞时间预测与应急响应日志
 - `EmergencyResponseSystem`: 失效响应（≤142ms）
